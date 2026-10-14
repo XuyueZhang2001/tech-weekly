@@ -1,0 +1,93 @@
+name: Weekly Tech Digest
+
+# 定时说明：GitHub 的 cron 用 UTC，且高峰期可能延迟几分钟到几十分钟。
+# 0 1 * * 1 = 每周一 01:00 UTC = 北京时间周一 09:00
+on:
+  schedule:
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "运行模式：run=试发+正式发送，send=直接发送，preview=只生成不发信，llm=只测中文摘要"
+        required: false
+        default: "run"
+        type: choice
+        options: [run, send, preview, llm]
+      days:
+        description: "时间窗口（天）"
+        required: false
+        default: "7"
+
+concurrency:
+  group: weekly-tech-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 中文摘要结果的缓存：同一条内容不会重复付费翻译
+      - name: 恢复中文摘要缓存
+        uses: actions/cache/restore@v4
+        with:
+          path: cache/
+          key: llm-cache-${{ github.run_id }}
+          restore-keys: |
+            llm-cache-
+
+      # 本项目是纯标准库实现，这一步只为确认环境可跑，可随时删除
+      - name: 语法自检
+        run: |
+          python -m py_compile main.py translate.py
+          python -c "import json;json.load(open('config.json',encoding='utf-8'));print('config.json OK')"
+
+      - name: 生成并发送周报
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_SSL: ${{ secrets.SMTP_SSL }}
+          SMTP_STARTTLS: ${{ secrets.SMTP_STARTTLS }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_FROM_NAME: ${{ secrets.MAIL_FROM_NAME }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_CC: ${{ secrets.MAIL_CC }}
+          TEST_RECIPIENT: ${{ secrets.TEST_RECIPIENT }}
+          # 中文摘要。不配也能跑，只是邮件会保留英文原文。
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          DAYS="${{ github.event.inputs.days }}"
+          if [ -z "$MODE" ]; then MODE="run"; fi
+          if [ -z "$DAYS" ]; then DAYS="7"; fi
+          echo "模式=$MODE 窗口=${DAYS}天"
+          python main.py "$MODE" --days "$DAYS"
+
+      - name: 保存中文摘要缓存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache/
+          key: llm-cache-${{ github.run_id }}
+
+      - name: 上传本期预览（无论成败都留档）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-digest-${{ github.run_number }}
+          path: out/
+          if-no-files-found: warn
+          retention-days: 30
