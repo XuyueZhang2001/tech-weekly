@@ -21,11 +21,13 @@ import re
 import smtplib
 import ssl
 import sys
+import threading
 import time
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.header import Header
@@ -47,6 +49,16 @@ NOISE_RE = re.compile(
     r"\b(arrested|indicted|charged with|pleads? guilty|sentenced|jailed|police|murder|"
     r"manslaughter|sues|sued|lawsuit|litigation|court|jury|fraud|embezzl|stalk(?:ing|er)|"
     r"assault|harassment|discriminat|leak(?:ed|s)? (?:memo|email)|lawsuit)\b",
+    re.I,
+)
+# Bing 新闻对并发很敏感，多个查询同时打过去会被限流并返回 HTML 而不是 RSS，
+# 所以所有 Bing 请求串行化。
+BING_LOCK = threading.Lock()
+# 财经/资本类措辞：周报以"技术进展"为主。融资、股价、估值这类内容降权，
+# 避免同一笔融资被多家媒体反复顶上首页。
+FINANCE_RE = re.compile(
+    r"融资|募资|估值|股价|涨停|跌停|市值|IPO|上市|A轮|B轮|C轮|战略投资|"
+    r"亿元|亿美元|营收|净利|财报|板块",
     re.I,
 )
 
@@ -597,12 +609,99 @@ def _pubmed_date(art):
     return None
 
 
+def _bing_real_url(link: str) -> str:
+    """Bing 新闻的 link 是 apiclick.aspx 跳转，把真实地址从 url= 参数里取出来。"""
+    try:
+        parts = urllib.parse.urlsplit(link)
+        if "bing.com" in parts.netloc and parts.path.endswith("apiclick.aspx"):
+            query = urllib.parse.parse_qs(parts.query)
+            real = (query.get("url") or [""])[0]
+            if real.startswith("http"):
+                return real
+    except Exception:  # noqa: BLE001
+        pass
+    return link
+
+
+def _bing_fetch_root(query: str, cfg: dict):
+    """取一个查询的 RSS；串行 + 退避重试，避开 Bing 的限流（返回 HTML 的情况）。"""
+    url = "https://www.bing.com/news/search?q=%s&format=RSS" % urllib.parse.quote(query)
+    last_err = None
+    for attempt in range(3):
+        try:
+            with BING_LOCK:                      # 串行化，避免并发触发限流
+                xml = http_get(url, cfg,
+                               "application/rss+xml, application/atom+xml, text/xml, */*")
+                time.sleep(0.35)
+            root = ET.fromstring(xml)            # 返回 HTML 时会在这里抛解析错误
+            if _strip_ns(root.tag) != "rss":
+                raise ValueError("返回的不是 RSS（可能是限流页）")
+            return root
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            time.sleep(1.2 * (attempt + 1))
+    raise last_err  # type: ignore[misc]
+
+
+def _clean_outlet(name: str) -> str:
+    """清洗媒体名：去掉 "on MSN" 之类的转载后缀。"""
+    name = re.sub(r"\s+on\s+MSN\s*$", "", name, flags=re.I)
+    name = re.sub(r"\s*-\s*MSN\s*$", "", name, flags=re.I)
+    return name.strip()
+
+
+def fetch_bing_news(src: dict, domain: str, cfg: dict) -> list:
+    """Bing 新闻搜索（国内可直连，无需 Key），按 queries 逐个搜索后合并去重。
+
+    每条结果自带真实媒体名（<News:Source>，例如 搜狐 / 新浪财经）和中文摘要，
+    比固定"某站某栏目"覆盖更广。
+
+    注意：URL 里只能有 q 和 format=RSS。加上 setmkt/setlang/mkt 等参数会返回 HTML
+    而不是 RSS（实测），所以刻意保持最简。
+    """
+    queries = src.get("queries") or []
+    if not queries:
+        return []
+    items, seen = [], set()
+    for query in queries:
+        try:
+            root = _bing_fetch_root(query, cfg)
+        except Exception as exc:  # noqa: BLE001
+            warn("Bing 新闻查询失败 query=%s: %s" % (query, str(exc)[:120]))
+            continue
+        for node in (el for el in root.iter() if _strip_ns(el.tag) == "item"):
+            title = _desc(node, "title")
+            link = _desc(node, "link")
+            if not title or not link:
+                continue
+            real = _bing_real_url(link)
+            key = norm_url(real) or norm_title(title)
+            if key in seen:
+                continue
+            seen.add(key)
+            outlet = _clean_outlet(_desc(node, "Source") or "") or src.get("name", "Bing 新闻")
+            items.append(Article(
+                title=clean_text(title, 200),
+                url=real,
+                source=outlet,
+                domain=domain,
+                published=_to_dt(_desc(node, "pubDate")) or datetime.now(timezone.utc),
+                summary=clean_text(_desc(node, "description")),
+                weight=int(src.get("weight", 10)),
+                group=src.get("group", ""),
+            ))
+    if not items:
+        raise ValueError("Bing 新闻没有结果")
+    return items
+
+
 FETCHERS = {
     "rss": fetch_rss,
     "arxiv": fetch_arxiv,
     "hackernews": fetch_hackernews,
     "huggingface_papers": fetch_huggingface_papers,
     "pubmed": fetch_pubmed,
+    "bing_news": fetch_bing_news,
 }
 
 
@@ -613,6 +712,8 @@ def collect(cfg: dict):
         if not dom.get("enabled", True):
             continue
         for src in dom.get("sources", []):
+            if src.get("enabled", True) is False:
+                continue          # 单个信源可临时停用，不必删除配置
             jobs.append((dom["id"], src))
 
     articles, status = [], []
@@ -670,6 +771,8 @@ def score_article(art: Article, dom_cfg: dict, now: datetime) -> float:
         score += min(art.points / 25.0, 9.0)
     if NOISE_RE.search(art.title):
         score -= 14.0                                          # 案件/诉讼八卦类，压到候选池末尾
+    if FINANCE_RE.search(art.title) and art.domain != "bio":
+        score -= 4.5                                           # 财经资本类降权（生物医药的融资可保留）
     return score
 
 
@@ -684,17 +787,27 @@ def build_report(cfg: dict, window_days: int, now: datetime | None = None):
         art.in_window = art.published >= cutoff
 
     # ---- 去重：同一篇内容在多源出现时保留最佳来源，其余挂到 extra_links ----
+    # 两级判断：先按正文链接归一化；再按标题归一化。
+    # 后者专门处理"同一篇稿子被腾讯/搜狐/新浪分别转载"——URL 各不相同，
+    # 但标题一字不差，只用 URL 去重会把同一件事重复列两三次。
     best: dict = {}
+    best_by_title: dict = {}
     for art in sorted(articles, key=lambda a: (a.score, a.published), reverse=True):
         k = key_of(art)
-        if k in best:
-            keep = best[k]
-            if art.source != keep.source:
+        t = norm_title(art.title)
+        keep = best.get(k) or (best_by_title.get(t) if t else None)
+        if keep is not None:
+            if art.source != keep.source and all(art.url != u for u, _ in keep.extra_links):
                 keep.extra_links.append((art.url, art.source))
             keep.score = max(keep.score, art.score - 0.5)
+            best.setdefault(k, keep)
+            if t:
+                best_by_title.setdefault(t, keep)
         else:
             best[k] = art
-    deduped = list(best.values())
+            if t:
+                best_by_title[t] = art
+    deduped = list({id(a): a for a in best.values()}.values())
 
     all_dates = [a.published for a in deduped]
     stats = {
@@ -719,7 +832,8 @@ def build_report(cfg: dict, window_days: int, now: datetime | None = None):
             if group:
                 article_groups[s.get("name")] = group
     for art in deduped:
-        art.group = article_groups.get(art.source, "")
+        # 抓取阶段已带 group 的（例如 bing_news 的脑机接口）优先保留
+        art.group = art.group or article_groups.get(art.source, "")
 
     sections = []
     for dom in cfg.get("domains", []):
@@ -751,6 +865,23 @@ def build_report(cfg: dict, window_days: int, now: datetime | None = None):
             weights_map = dict(weights)
             weights_map[general_key] = len(general_sources)
             quota_map = allocate_quota(keys, weights_map, quota)
+            # 分组保底名额：按比例分配后，某些分组可能只拿到 1 个甚至 0 个，
+            # 主题重要但内容多时明显不够用。group_min 可以给它们设下限，
+            # 差额从其他分组（配额多的优先）里借，总数不变。
+            for g, minimum in (dom.get("group_min") or {}).items():
+                if g not in quota_map:
+                    continue
+                deficit = int(minimum) - quota_map[g]
+                if deficit <= 0:
+                    continue
+                for other in sorted((k for k in quota_map if k != g),
+                                    key=lambda k: quota_map[k], reverse=True):
+                    if deficit <= 0:
+                        break
+                    take = min(deficit, quota_map[other])
+                    quota_map[other] -= take
+                    quota_map[g] += take
+                    deficit -= take
 
             chosen, overflow = [], []
             for key in keys:
@@ -788,6 +919,30 @@ def build_report(cfg: dict, window_days: int, now: datetime | None = None):
                 for art in extra:
                     art.in_window = False
                     chosen.append(art)
+            groups = []
+
+        # 近似去重：同一事件被多家媒体用不同标题转载时只留一条，空出的名额补回来
+        chosen = collapse_similar(chosen)
+        if len(chosen) < quota:
+            used = {id(a) for a in chosen}
+            spare = [a for a in overflow if id(a) not in used]
+            spare.sort(key=lambda a: (a.score, a.published), reverse=True)
+            chosen.extend(spare[: quota - len(chosen)])
+            if len(chosen) < quota:
+                extra, _ = pick_with_source_spread(stale_pool, quota - len(chosen))
+                for art in extra:
+                    art.in_window = False
+                    chosen.append(art)
+            chosen.sort(key=lambda a: (a.score, a.published), reverse=True)
+        if order:                                    # 重新按分组归类
+            groups = []
+            if general_arts:
+                groups.append({"name": "",
+                               "articles": [a for a in chosen if a.source in general_sources]})
+            for key in order:
+                groups.append({"name": key,
+                               "articles": [a for a in chosen if a.group == key]})
+        else:
             groups = []
 
         sections.append({"domain": dom, "articles": chosen, "overflow": overflow,
@@ -840,6 +995,48 @@ def pick_with_source_spread(pool: list, quota: int):
         chosen.append(pick)
     chosen.sort(key=lambda a: (a.score, a.published), reverse=True)
     return chosen, remaining
+
+
+def _title_grams(title: str) -> Counter:
+    """标题的字符 2-gram 计数，用于近似重复判断（对中文无需分词）。"""
+    text = re.sub(r"[^\w\u4e00-\u9fff]+", "", (title or "").lower())
+    return Counter(text[i:i + 2] for i in range(len(text) - 1))
+
+
+def _gram_cosine(a: Counter, b: Counter) -> float:
+    if not a or not b:
+        return 0.0
+    common = set(a) & set(b)
+    numerator = sum(a[k] * b[k] for k in common)
+    na = sum(v * v for v in a.values()) ** 0.5
+    nb = sum(v * v for v in b.values()) ** 0.5
+    return numerator / (na * nb) if na and nb else 0.0
+
+
+def collapse_similar(articles: list, threshold: float = 0.39) -> list:
+    """把"同一件事、不同标题"的多条合并成一条。
+
+    典型场景：腾讯、搜狐、新浪分别转载同一篇稿子，标题措辞略有不同，
+    按 URL 或标题完全相等的去重都抓不到这类重复。用字符 2-gram 余弦相似度判断，
+    阈值 0.39 是实测选出来的：同一事件的不同标题通常 >=0.39，
+    而不同事件（例如"华为芯片"与"DeepSeek 融资"）只有 0.35 左右。
+    """
+    kept, grams = [], []
+    for art in articles:
+        g = _title_grams(art.title)
+        hit = None
+        for index, keep in enumerate(kept):
+            if _gram_cosine(g, grams[index]) >= threshold:
+                hit = keep
+                break
+        if hit is None:
+            kept.append(art)
+            grams.append(g)
+            continue
+        if art.source != hit.source and all(art.url != u for u, _ in hit.extra_links):
+            hit.extra_links.append((art.url, art.source))
+        hit.score = max(hit.score, art.score - 0.5)
+    return kept
 
 
 def period_label(now: datetime, window_days: int) -> str:

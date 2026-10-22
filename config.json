@@ -708,8 +708,49 @@
           ],
           "min_title_hits": 1,
           "group": "脑机接口"
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 脑机接口",
+          "weight": 11,
+          "group": "脑机接口",
+          "queries": [
+            "脑机接口",
+            "脑机接口 临床",
+            "脑机接口 融资",
+            "植入式 脑机接口"
+          ],
+          "title_keywords": [
+            "脑机接口",
+            "脑机",
+            "bci",
+            "neural interface",
+            "神经接口",
+            "植入式",
+            "电极"
+          ],
+          "min_title_hits": 1,
+          "filter_keywords": [
+            "脑机接口",
+            "脑机",
+            "bci",
+            "neural interface",
+            "神经接口",
+            "植入式",
+            "电极",
+            "临床试验",
+            "瘫痪",
+            "意念",
+            "神经调控",
+            "侵入式",
+            "非侵入"
+          ],
+          "min_filter_hits": 1
         }
-      ]
+      ],
+      "group_min": {
+        "脑机接口": 2
+      }
     },
     {
       "id": "chip",
@@ -1085,7 +1126,9 @@
             "开源",
             "先进封装"
           ],
-          "min_filter_hits": 1
+          "min_filter_hits": 1,
+          "enabled": false,
+          "_note": "2026-10-22 起连接被拒，暂时停用；恢复后把 enabled 改回 true"
         },
         {
           "type": "rss",
@@ -1190,6 +1233,64 @@
           ],
           "min_keyword_hits": 1,
           "points_bypass": 1000000
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 中国芯片",
+          "weight": 11,
+          "queries": [
+            "中国 芯片",
+            "国产 芯片",
+            "华为 芯片"
+          ],
+          "title_keywords": [
+            "芯片",
+            "半导体",
+            "晶圆",
+            "光刻",
+            "封装",
+            "华为",
+            "中芯",
+            "EDA"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 中国 AI",
+          "weight": 11,
+          "queries": [
+            "国产大模型",
+            "中国 人工智能",
+            "DeepSeek 融资",
+            "DeepSeek 开源"
+          ],
+          "title_keywords": [
+            "大模型",
+            "人工智能",
+            "AI",
+            "智能体",
+            "DeepSeek",
+            "通义",
+            "文心"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 人形机器人",
+          "weight": 10,
+          "queries": [
+            "人形机器人",
+            "具身智能"
+          ],
+          "title_keywords": [
+            "机器人",
+            "具身",
+            "人形",
+            "灵巧手"
+          ],
+          "min_title_hits": 1
         }
       ]
     }
