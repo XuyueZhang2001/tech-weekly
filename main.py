@@ -695,6 +695,153 @@ def fetch_bing_news(src: dict, domain: str, cfg: dict) -> list:
     return items
 
 
+def _http_post_json(url: str, payload: dict, headers: dict, cfg: dict) -> dict:
+    """POST JSON 并把响应解析成 dict（供需要 POST 的搜索 API 使用）。"""
+    fetch_cfg = cfg.get("fetch", {})
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": fetch_cfg.get("user_agent", "Mozilla/5.0"),
+    }
+    request_headers.update(headers or {})
+    req = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
+    with urllib.request.urlopen(req, timeout=int(fetch_cfg.get("timeout_seconds", 25))) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def _search_provider_key(src: dict, provider: str) -> str:
+    """按服务商取 Key，优先环境变量，方便在 GitHub Secrets 里配置。"""
+    env_names = {
+        "brave": ("BRAVE_API_KEY", "SEARCH_API_KEY"),
+        "tavily": ("TAVILY_API_KEY", "SEARCH_API_KEY"),
+        "searxng": ("SEARXNG_URL",),
+        "google": ("GOOGLE_API_KEY", "SEARCH_API_KEY"),
+        "google_cse": ("GOOGLE_API_KEY", "SEARCH_API_KEY"),
+    }.get(provider, ("SEARCH_API_KEY",))
+    for name in env_names:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return (src.get("api_key") or "").strip()
+
+
+def _search_one(provider: str, query: str, src: dict, cfg: dict, key: str, limit: int):
+    """调用一个搜索服务商，返回 [{title,url,description,published}]。"""
+    timeout = int(cfg.get("fetch", {}).get("timeout_seconds", 25))
+    ua = cfg.get("fetch", {}).get("user_agent", "Mozilla/5.0")
+
+    if provider == "brave":
+        base = (src.get("base_url") or "https://api.search.brave.com").rstrip("/")
+        url = ("%s/res/v1/web/search?q=%s&count=%d"
+               % (base, urllib.parse.quote(query), limit))
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/json",
+            "X-Subscription-Token": key,
+            "User-Agent": ua,
+        })
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        return [{"title": r.get("title", ""), "url": r.get("url", ""),
+                 "description": r.get("description", ""),
+                 "published": r.get("page_age") or r.get("age") or ""}
+                for r in (data.get("web", {}) or {}).get("results", [])]
+
+    if provider == "tavily":
+        base = (src.get("base_url") or "https://api.tavily.com").rstrip("/")
+        data = _http_post_json(base + "/search",
+                               {"api_key": key, "query": query, "max_results": limit,
+                                "search_depth": src.get("search_depth", "basic"),
+                                "include_answer": False, "days": int(src.get("days", 7))},
+                               {}, cfg)
+        return [{"title": r.get("title", ""), "url": r.get("url", ""),
+                 "description": r.get("content", ""),
+                 "published": r.get("published_date", "")}
+                for r in data.get("results", [])]
+
+    if provider == "searxng":
+        base = key.rstrip("/")          # searxng 用 base_url 当"key"
+        url = "%s/search?q=%s&format=json&language=zh-CN" % (
+            base, urllib.parse.quote(query))
+        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": ua})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        return [{"title": r.get("title", ""), "url": r.get("url", ""),
+                 "description": r.get("content", ""),
+                 "published": r.get("publishedDate", "")}
+                for r in data.get("results", [])]
+
+    if provider in ("google", "google_cse"):
+        cx = (os.environ.get("GOOGLE_CSE_ID") or src.get("cse_id") or "").strip()
+        if not cx:
+            raise ValueError("google_cse 需要配置 cse_id（或环境变量 GOOGLE_CSE_ID）")
+        base = (src.get("base_url") or "https://www.googleapis.com").rstrip("/")
+        url = ("%s/customsearch/v1?key=%s&cx=%s&q=%s&num=%d&dateRestrict=d%d"
+               % (base, key, cx, urllib.parse.quote(query), min(limit, 10),
+                  int(src.get("days", 7))))
+        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": ua})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        return [{"title": r.get("title", ""), "url": r.get("link", ""),
+                 "description": r.get("snippet", ""), "published": ""}
+                for r in data.get("items", [])]
+
+    raise ValueError("不支持的搜索服务商: %s" % provider)
+
+
+def fetch_web_search(src: dict, domain: str, cfg: dict) -> list:
+    """通用网页搜索信源：按 queries 调用搜索 API，把网页结果并入周报。
+
+    注意：Bing Web Search API 已于 2025-08-11 退役，所以不再支持 bing 这一项。
+    可用 provider：brave / tavily / searxng / google_cse。
+    Key 优先读环境变量（BRAVE_API_KEY / TAVILY_API_KEY / GOOGLE_API_KEY /
+    SEARXNG_URL），没配就退回到 config 里的 api_key。
+    """
+    queries = src.get("queries") or []
+    if not queries:
+        return []
+    provider = (src.get("provider") or "brave").lower()
+    key = _search_provider_key(src, provider)
+    if not key:
+        raise ValueError("未配置 %s 的 Key（环境变量或 config 的 api_key）" % provider)
+
+    supported = ("brave", "tavily", "searxng", "google", "google_cse")
+    if provider not in supported:
+        raise ValueError("不支持的搜索服务商: %s（支持 %s）"
+                         % (provider, " / ".join(supported)))
+
+    limit = int(src.get("limit", 10))
+    items, seen = [], set()
+    for query in queries:
+        try:
+            results = _search_one(provider, query, src, cfg, key, limit)
+        except Exception as exc:  # noqa: BLE001
+            warn("网页搜索失败 provider=%s query=%s: %s" % (provider, query, str(exc)[:120]))
+            continue
+        for result in results:
+            title = (result.get("title") or "").strip()
+            link = (result.get("url") or "").strip()
+            if not title or not link:
+                continue
+            normalized = norm_url(link)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            items.append(Article(
+                title=clean_text(title, 200),
+                url=link,
+                source=host_of(link) or provider,
+                domain=domain,
+                published=_to_dt(result.get("published") or "") or datetime.now(timezone.utc),
+                summary=clean_text(result.get("description") or ""),
+                weight=int(src.get("weight", 10)),
+                group=src.get("group", ""),
+            ))
+    if not items:
+        raise ValueError("网页搜索没有结果")
+    return items
+
+
 FETCHERS = {
     "rss": fetch_rss,
     "arxiv": fetch_arxiv,
@@ -702,6 +849,7 @@ FETCHERS = {
     "huggingface_papers": fetch_huggingface_papers,
     "pubmed": fetch_pubmed,
     "bing_news": fetch_bing_news,
+    "web_search": fetch_web_search,
 }
 
 

@@ -1291,6 +1291,91 @@
             "灵巧手"
           ],
           "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "36氪",
+          "weight": 11,
+          "url": "https://www.36kr.com/feed",
+          "title_keywords": [
+            "AI",
+            "人工智能",
+            "大模型",
+            "芯片",
+            "半导体",
+            "机器人",
+            "自动驾驶",
+            "新能源",
+            "电池",
+            "量子",
+            "航天",
+            "卫星",
+            "脑机",
+            "生物",
+            "医药",
+            "开源",
+            "算力",
+            "智能体"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "爱范儿",
+          "weight": 10,
+          "url": "https://www.ifanr.com/feed",
+          "title_keywords": [
+            "AI",
+            "苹果",
+            "华为",
+            "小米",
+            "芯片",
+            "机器人",
+            "汽车",
+            "电池",
+            "模型",
+            "开源",
+            "手机",
+            "智能",
+            "眼镜",
+            "无人机"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "iThome（台湾）",
+          "weight": 9,
+          "url": "https://www.ithome.com.tw/rss",
+          "title_keywords": [
+            "AI",
+            "人工智慧",
+            "晶片",
+            "半導體",
+            "資安",
+            "雲端",
+            "機器人",
+            "伺服器",
+            "資料中心",
+            "開源",
+            "演算法"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "web_search",
+          "name": "网页搜索（待启用）",
+          "provider": "brave",
+          "api_key": "",
+          "queries": [
+            "中国 芯片 技术进展",
+            "脑机接口 最新进展"
+          ],
+          "limit": 8,
+          "days": 7,
+          "weight": 10,
+          "enabled": false,
+          "_note": "Bing Web Search API 已于 2025-08-11 退役。改填 Brave/Tavily/SearXNG 的 Key 后把 enabled 改为 true"
         }
       ]
     }

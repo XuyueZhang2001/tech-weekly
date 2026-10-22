@@ -144,7 +144,7 @@ setx LLM_API_KEY "sk-xxxxxxxx"
 ## 三、中文工作模式
 
 ```
-抓取 60 个信源 → 去重排序 → 选出 27 条 → 每次 10 条合并成一次请求 → 中文标题 + 中文摘要
+抓取 63 个信源 → 去重排序 → 选出 27 条 → 每次 10 条合并成一次请求 → 中文标题 + 中文摘要
                                               ↓
                                     按内容哈希落盘缓存 cache/llm-cache.json
 ```
@@ -246,6 +246,7 @@ setx LLM_API_KEY "sk-xxxxxxxx"
 - **`huggingface_papers`** —— Hugging Face 每日论文榜
 - **`pubmed`** —— PubMed 官方 E-utilities（免费、无需 Key），适合盯一个具体医学/生物主题
 - **`bing_news`** —— Bing 新闻搜索（国内可直连、无需 Key），用关键词发现清单外的媒体
+- **`web_search`** —— 通用网页搜索（需 Key，见下），可选 Brave / Tavily / SearXNG / Google CSE
 
 ### 搜索型信源（国内优先）
 
@@ -273,6 +274,36 @@ setx LLM_API_KEY "sk-xxxxxxxx"
 2. Bing 对并发敏感，多个查询同时打过去会被限流（返回 HTML）。所以 Bing 请求是**串行 + 退避重试**的。
 
 单个信源想临时停用，加 `"enabled": false` 即可，不用删配置（例如 Solidot 2026-10-22 起连接被拒，就先停用了）。
+
+### 网页搜索（可选，需 Key）
+
+> **Bing Web Search API 已经退役**（微软 2025-08-11 停止，[官方公告](https://learn.microsoft.com/zh-tw/lifecycle/announcements/bing-search-api-retirement)），
+> 现在申请不到新 Key，所以本项目**不再支持 `provider: "bing"`**。
+> 想用网页搜索，从下面选一个可用服务商。
+
+`web_search` 信源支持四种服务商，按需选一个、填对应 Key 即可：
+
+| provider | Key 来源 | 环境变量 | 国内直连 | 免费额度 |
+| --- | --- | --- | --- | --- |
+| `brave` | [Brave Search API](https://brave.com/search/api/) | `BRAVE_API_KEY` | 一般可以 | 有免费层 |
+| `tavily` | [Tavily](https://tavily.com/) | `TAVILY_API_KEY` | 一般可以 | 每月免费额度 |
+| `searxng` | 自建 [SearXNG](https://docs.searxng.org/) 实例 | `SEARXNG_URL` | 取决于实例 | 免费 |
+| `google_cse` | Google Programmable Search | `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | ❌ 需代理 | 每天 100 次 |
+
+配置示例（`config.json` 里已有一个 `enabled: false` 的占位，改好 Key 后把 `enabled` 改成 `true`）：
+
+```jsonc
+{ "type": "web_search", "name": "网页搜索", "provider": "brave",
+  "api_key": "",                  // 留空则读 BRAVE_API_KEY
+  "queries": ["中国 芯片 技术进展", "脑机接口 最新进展"],
+  "limit": 8,
+  "days": 7,
+  "weight": 10,
+  "enabled": true }
+```
+
+自托管 SearXNG 时，`provider` 填 `searxng`，`api_key` 填实例地址（如 `http://127.0.0.1:8080`），
+需要该实例开启 `format=json`。
 
 `weight` 是来源权重（越大越容易排到前面）。`keywords` 用来算相关性加分；
 HN 和 arXiv 还会用它做**硬过滤**（HN 默认要求标题至少命中 2 个，避免把无关热帖带进来）。
@@ -443,6 +474,7 @@ tech-weekly/
 ├─ run-weekly.ps1               # Windows 本地一键运行
 ├─ tests/test_smtp_flow.py      # 发信链路端到端测试（本地假 SMTP）
 ├─ tests/test_translate_flow.py # 中文摘要端到端测试（本地假大模型）
+├─ tests/test_web_search.py     # 网页搜索信源测试（本地假搜索服务）
 ├─ .github/workflows/weekly.yml # GitHub Actions 定时任务
 ├─ cache/                       # 中文摘要缓存，已被 .gitignore 忽略
 └─ out/                         # 生成的预览（HTML + TXT），已被 .gitignore 忽略
@@ -455,6 +487,7 @@ python main.py test                        # 信源体检
 python main.py llm                         # 中文摘要自检（会真实调用一次接口，花费约 0.001 元）
 python tests/test_smtp_flow.py             # 发信链路测试（本地回环，需联网抓内容）
 python tests/test_translate_flow.py        # 中文摘要测试（本地假模型，不联网、不花钱）
+python tests/test_web_search.py            # 网页搜索测试（本地假服务，不联网、不花钱）
 ```
 
 ---
