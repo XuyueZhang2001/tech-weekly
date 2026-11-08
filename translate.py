@@ -25,6 +25,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_PATH = os.path.join(HERE, "cache", "llm-cache.json")
 CACHE_VERSION = 1
 
+
+class LLMOutputTruncated(RuntimeError):
+    """模型输出被 max_tokens 截断。
+
+    重发同一个请求只会再截断一次，所以在 _chat() 里直接抛这个异常、
+    不做重试，让调用方带着明确的报错信息去调大 max_tokens 或调小 batch_size。
+    """
+
 SYSTEM_PROMPT = (
     "你是一名中文科技媒体编辑，负责把英文科技资讯改写成简体中文。"
     "要求：\n"
@@ -67,7 +75,11 @@ def llm_config(cfg: dict) -> dict:
         "provider": raw.get("provider", "deepseek"),
         "base_url": (env("LLM_BASE_URL") or raw.get("base_url") or "https://api.deepseek.com").rstrip("/"),
         "api_key": (env("LLM_API_KEY") or raw.get("api_key") or "").strip(),
-        "model": env("LLM_MODEL") or raw.get("model") or "deepseek-chat",
+        "model": env("LLM_MODEL") or raw.get("model") or "deepseek-flash",
+        # 思考模式：DeepSeek V4 系列默认开启（effort=high），思维链会占用
+        # max_tokens，翻译这种任务既不需要也容易把 JSON 撑爆。这里只在显式
+        # 配置时才传该字段，留空则完全不传，兼容不认识它的服务商。
+        "thinking": (env("LLM_THINKING") or raw.get("thinking") or "").strip().lower(),
         "batch_size": int(env("LLM_BATCH_SIZE") or raw.get("batch_size") or 10),
         "timeout_seconds": int(raw.get("timeout_seconds") or 120),
         "max_retries": int(raw.get("max_retries") or 3),
@@ -280,6 +292,8 @@ class Translator:
             "response_format": {"type": "json_object"},
             "stream": False,
         }
+        if llm.get("thinking") in ("enabled", "disabled"):
+            payload["thinking"] = {"type": llm["thinking"]}
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
@@ -298,7 +312,13 @@ class Translator:
                 choices = data.get("choices") or []
                 if not choices:
                     raise ValueError("响应里没有 choices: %s" % raw[:200])
-                return choices[0].get("message", {}).get("content") or ""
+                choice = choices[0]
+                if choice.get("finish_reason") == "length":
+                    raise LLMOutputTruncated(
+                        "输出被 max_tokens(%s) 截断，JSON 不完整。"
+                        "调大 config.json 的 llm.max_tokens，或调小 llm.batch_size。"
+                        % llm.get("max_tokens", 2048))
+                return (choice.get("message") or {}).get("content") or ""
             except urllib.error.HTTPError as exc:
                 detail = ""
                 try:
@@ -310,6 +330,9 @@ class Translator:
                 if exc.code in (400, 401, 403, 404, 422):
                     raise last_err
                 time.sleep(2 * (attempt + 1))
+            except LLMOutputTruncated:
+                # 截断是确定性的，重试只会白花钱
+                raise
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
                 time.sleep(2 * (attempt + 1))
