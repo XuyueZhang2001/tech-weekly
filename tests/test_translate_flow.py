@@ -297,7 +297,7 @@ def main():
         # ---- 7. 未配置 Key：优雅降级 -------------------------------------- #
         cfg = app.load_config(os.path.join(PROJECT, "config.json"))
         cfg["llm"] = {"enabled": True, "api_key": "", "provider": "deepseek"}
-        report = app.build_report(cfg, 7)
+        report = app.build_report(cfg, 7, use_llm=False)
         u, t = translate.translate_report_articles(report, cfg, log_fn=lambda _m: None,
                                                    warn_fn=lambda _m: None)
         check("无 Key 时降级不报错", t is None and u == {})
@@ -306,7 +306,7 @@ def main():
         cfg_off = dict(cfg)
         cfg_off["llm"] = base_llm(port)
         reqs_before = len(server.requests)
-        report_off = app.build_report(cfg_off, 7)
+        report_off = app.build_report(cfg_off, 7, use_llm=False)
         u_off, t_off = translate.translate_report_articles(
             report_off, cfg_off, log_fn=lambda _m: None, warn_fn=lambda _m: None, enabled=False)
         check("--no-llm 时完全不调用接口",
@@ -318,7 +318,7 @@ def main():
         # ---- 8. 渲染：中文标题 + 原题可追溯 + 标签配平 --------------------- #
         cfg2 = dict(cfg)
         cfg2["llm"] = base_llm(port)
-        report2 = app.build_report(cfg2, 7)
+        report2 = app.build_report(cfg2, 7, use_llm=False)
         config_articles = [a for s in report2["sections"] for a in s["articles"]]
         for a in config_articles:
             a.title_zh = "【中文标题】%s" % a.title[:40]

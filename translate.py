@@ -161,6 +161,78 @@ class Cache:
 
 
 # --------------------------------------------------------------------------- #
+# HTTP：翻译与选稿共用同一个入口，重试与截断判定只保留一份实现
+# --------------------------------------------------------------------------- #
+def post_chat(llm: dict, system_prompt: str, user_prompt: str,
+              max_tokens: int | None = None,
+              temperature: float | None = None) -> tuple:
+    """发一次 /chat/completions，返回 (content, usage)。
+
+    usage 由调用方自己记账。
+    """
+    if not llm.get("api_key"):
+        raise RuntimeError("未配置 LLM API Key")
+    url = llm["base_url"] + "/chat/completions"
+    tokens = int(max_tokens or llm.get("max_tokens", 2048))
+    payload = {
+        "model": llm["model"],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": llm.get("temperature", 0.2) if temperature is None else temperature,
+        "max_tokens": tokens,
+        # 强制 JSON 输出，解析更稳。若你的服务商不支持这个参数，
+        # 把下面这行删掉即可——parse_items() 本身能容忍代码块和前后废话。
+        "response_format": {"type": "json_object"},
+        "stream": False,
+    }
+    if llm.get("thinking") in ("enabled", "disabled"):
+        payload["thinking"] = {"type": llm["thinking"]}
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer %s" % llm["api_key"],
+        "Accept": "application/json",
+        "User-Agent": "tech-weekly/1.0",
+    }
+    last_err = None
+    for attempt in range(max(1, int(llm.get("max_retries", 3)))):
+        try:
+            req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=int(llm.get("timeout_seconds", 120))) as resp:
+                raw = resp.read().decode("utf-8", "replace")
+            data = json.loads(raw)
+            choices = data.get("choices") or []
+            if not choices:
+                raise ValueError("响应里没有 choices: %s" % raw[:200])
+            choice = choices[0]
+            if choice.get("finish_reason") == "length":
+                raise LLMOutputTruncated(
+                    "输出被 max_tokens(%s) 截断，JSON 不完整。"
+                    "调大 config.json 的 llm.max_tokens，或调小批大小。" % tokens)
+            return (choice.get("message") or {}).get("content") or "", data.get("usage") or {}
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:300]
+            except Exception:  # noqa: BLE001
+                pass
+            last_err = RuntimeError("HTTP %s %s" % (exc.code, detail))
+            # 401/403 是 Key 或权限问题，重试没有意义
+            if exc.code in (400, 401, 403, 404, 422):
+                raise last_err
+            time.sleep(2 * (attempt + 1))
+        except LLMOutputTruncated:
+            # 截断是确定性的，重试只会白花钱
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            time.sleep(2 * (attempt + 1))
+    raise last_err  # type: ignore[misc]
+
+
+# --------------------------------------------------------------------------- #
 # 翻译器
 # --------------------------------------------------------------------------- #
 def clean_zh(text: str) -> str:
@@ -275,68 +347,9 @@ class Translator:
 
     # ---- HTTP -------------------------------------------------------------- #
     def _chat(self, user_prompt: str) -> str:
-        llm = self.llm
-        if not llm.get("api_key"):
-            raise RuntimeError("未配置 LLM API Key")
-        url = llm["base_url"] + "/chat/completions"
-        payload = {
-            "model": llm["model"],
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": llm.get("temperature", 0.2),
-            "max_tokens": llm.get("max_tokens", 2048),
-            # 强制 JSON 输出，解析更稳。若你的服务商不支持这个参数，
-            # 把下面这行删掉即可——parse_items() 本身能容忍代码块和前后废话。
-            "response_format": {"type": "json_object"},
-            "stream": False,
-        }
-        if llm.get("thinking") in ("enabled", "disabled"):
-            payload["thinking"] = {"type": llm["thinking"]}
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer %s" % llm["api_key"],
-            "Accept": "application/json",
-            "User-Agent": "tech-weekly/1.0",
-        }
-        last_err = None
-        for attempt in range(max(1, int(llm.get("max_retries", 3)))):
-            try:
-                req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-                with urllib.request.urlopen(req, timeout=int(llm.get("timeout_seconds", 120))) as resp:
-                    raw = resp.read().decode("utf-8", "replace")
-                data = json.loads(raw)
-                self._account(data.get("usage") or {})
-                choices = data.get("choices") or []
-                if not choices:
-                    raise ValueError("响应里没有 choices: %s" % raw[:200])
-                choice = choices[0]
-                if choice.get("finish_reason") == "length":
-                    raise LLMOutputTruncated(
-                        "输出被 max_tokens(%s) 截断，JSON 不完整。"
-                        "调大 config.json 的 llm.max_tokens，或调小 llm.batch_size。"
-                        % llm.get("max_tokens", 2048))
-                return (choice.get("message") or {}).get("content") or ""
-            except urllib.error.HTTPError as exc:
-                detail = ""
-                try:
-                    detail = exc.read().decode("utf-8", "replace")[:300]
-                except Exception:  # noqa: BLE001
-                    pass
-                last_err = RuntimeError("HTTP %s %s" % (exc.code, detail))
-                # 401/403 是 Key 或权限问题，重试没有意义
-                if exc.code in (400, 401, 403, 404, 422):
-                    raise last_err
-                time.sleep(2 * (attempt + 1))
-            except LLMOutputTruncated:
-                # 截断是确定性的，重试只会白花钱
-                raise
-            except Exception as exc:  # noqa: BLE001
-                last_err = exc
-                time.sleep(2 * (attempt + 1))
-        raise last_err  # type: ignore[misc]
+        content, usage = post_chat(self.llm, SYSTEM_PROMPT, user_prompt)
+        self._account(usage)
+        return content
 
     def _account(self, usage: dict):
         self.usage["requests"] += 1

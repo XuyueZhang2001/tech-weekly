@@ -36,6 +36,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate, parsedate_to_datetime
 from xml.etree import ElementTree as ET
 
+import curate
 import translate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -924,7 +925,8 @@ def score_article(art: Article, dom_cfg: dict, now: datetime) -> float:
     return score
 
 
-def build_report(cfg: dict, window_days: int, now: datetime | None = None):
+def build_report(cfg: dict, window_days: int, now: datetime | None = None,
+                 use_llm: bool = True):
     now = now or datetime.now(timezone.utc)
     articles, status = collect(cfg)
     cutoff = now - timedelta(days=window_days)
@@ -957,10 +959,17 @@ def build_report(cfg: dict, window_days: int, now: datetime | None = None):
                 best_by_title[t] = art
     deduped = list({id(a): a for a in best.values()}.values())
 
+    # ---- 选稿：让大模型做编辑判断，失败自动退回规则分 ----
+    # 规则分只能回答"新不新、来源靠不靠谱"，回答不了"值不值得看"。
+    # 这里对每领域候选池打相关度分、合并同事件，再参与后续配额与轮转。
+    deduped, curation = curate.curate(deduped, cfg, log_fn=log, warn_fn=warn,
+                                      enabled=use_llm)
+
     all_dates = [a.published for a in deduped]
     stats = {
         "fetched": len(articles),
         "unique": len(deduped),
+        "curation": curation,
         "in_window": sum(1 for a in deduped if a.in_window),
         "oldest": min(all_dates).isoformat() if all_dates else "",
         "newest": max(all_dates).isoformat() if all_dates else "",
@@ -1161,25 +1170,66 @@ def _gram_cosine(a: Counter, b: Counter) -> float:
     return numerator / (na * nb) if na and nb else 0.0
 
 
+CJK_CHAR = re.compile(r"[\u4e00-\u9fff]")
+WORD_STOP = {"the", "a", "an", "of", "to", "in", "on", "for", "and", "with",
+             "at", "by", "is", "are", "was", "its", "it", "as", "from"}
+NUM_UNIT = {"billion": "b", "bn": "b", "trillion": "t", "tn": "t",
+            "million": "m", "mn": "m", "thousand": "k"}
+
+
+def _title_words(title: str) -> set:
+    """英文标题的词集合（去停用词、去单字符），用于 Jaccard 判断。
+
+    先把「11 billion / 1.25 trillion」这类数量统一成 11b / 1.25t，
+    否则同一件事写成「$11B」和「$11 billion」会被判成两条不同新闻。
+    """
+    text = (title or "").lower()
+
+    def _unit(match):
+        return match.group(1).replace(",", "") + NUM_UNIT[match.group(2)]
+
+    text = re.sub(r"(\d[\d,.]*)\s*(billion|trillion|million|thousand|bn|tn|mn)\b",
+                  _unit, text)
+    words = re.findall(r"[a-z0-9]+", text)
+    return {w for w in words if len(w) > 1 and w not in WORD_STOP}
+
+
+def _jaccard(a: set, b: set) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / float(len(a | b))
+
+
+def similar_titles(t1: str, t2: str, cjk_threshold: float = 0.39,
+                   word_threshold: float = 0.5) -> bool:
+    """判断两个标题是否在说同一件事。
+
+    中文用字符 2-gram 余弦（不需要分词）；英文必须用词集合 Jaccard。
+    原因是字符 n-gram 对英文几乎失效：任意两段英文都共享大量字母组合
+    （th / he / in / er…），实测两篇毫不相关的长标题余弦也有 0.41，
+    会稳定穿过 0.39 的阈值，把不同事件误合并。词集合没有这个问题。
+    """
+    if CJK_CHAR.search(t1 or "") or CJK_CHAR.search(t2 or ""):
+        return _gram_cosine(_title_grams(t1), _title_grams(t2)) >= cjk_threshold
+    return _jaccard(_title_words(t1), _title_words(t2)) >= word_threshold
+
+
 def collapse_similar(articles: list, threshold: float = 0.39) -> list:
     """把"同一件事、不同标题"的多条合并成一条。
 
     典型场景：腾讯、搜狐、新浪分别转载同一篇稿子，标题措辞略有不同，
-    按 URL 或标题完全相等的去重都抓不到这类重复。用字符 2-gram 余弦相似度判断，
-    阈值 0.39 是实测选出来的：同一事件的不同标题通常 >=0.39，
-    而不同事件（例如"华为芯片"与"DeepSeek 融资"）只有 0.35 左右。
+    按 URL 或标题完全相等的去重都抓不到这类重复。中文靠字符 2-gram 余弦，
+    英文靠词集合 Jaccard，具体原因见 similar_titles() 的注释。
     """
-    kept, grams = [], []
+    kept = []
     for art in articles:
-        g = _title_grams(art.title)
         hit = None
-        for index, keep in enumerate(kept):
-            if _gram_cosine(g, grams[index]) >= threshold:
+        for keep in kept:
+            if similar_titles(art.title, keep.title, cjk_threshold=threshold):
                 hit = keep
                 break
         if hit is None:
             kept.append(art)
-            grams.append(g)
             continue
         if art.source != hit.source and all(art.url != u for u, _ in hit.extra_links):
             hit.extra_links.append((art.url, art.source))
@@ -1356,14 +1406,20 @@ def render_html(report: dict, cfg: dict) -> str:
   </div>
 """ % (len(st["sources_degraded"]), rows))
 
+    footer_stats = "生成时间：%s · 抓取 %d 条 → 去重 %d 条 → 窗口内 %d 条" % (
+        report["generated_at"].astimezone(tz).strftime("%Y-%m-%d %H:%M:%S"),
+        st["fetched"], st["unique"], st["in_window"])
+    cura = st.get("curation") or {}
+    if cura.get("enabled"):
+        footer_stats += " · 选稿 %d 候选 → %d 条入选" % (
+            cura.get("pool", 0), cura.get("kept", 0))
+
     parts.append("""
   <div style="margin-top:24px;padding-top:14px;border-top:1px solid #dfe3ea;color:#8b93a1;font-size:12px;text-align:center;">
-    %s<br>生成时间：%s · 抓取 %d 条 → 去重 %d 条 → 窗口内 %d 条
+    %s<br>%s
   </div>
 </div></body></html>
-""" % (_esc(rep.get("footer", "")),
-       report["generated_at"].astimezone(tz).strftime("%Y-%m-%d %H:%M:%S"),
-       st["fetched"], st["unique"], st["in_window"]))
+""" % (_esc(rep.get("footer", "")), _esc(footer_stats)))
     return "".join(parts)
 
 
@@ -1502,7 +1558,7 @@ def cmd_test(cfg: dict) -> int:
 
 def prepare(cfg: dict, days: int, use_llm: bool = True):
     """抓取 + 排序 +（可选）中文摘要。返回 (report, llm_usage)。"""
-    report = build_report(cfg, days)
+    report = build_report(cfg, days, use_llm=use_llm)
     usage, translator = translate.translate_report_articles(
         report, cfg, log_fn=log, warn_fn=warn, enabled=use_llm)
     report["llm_usage"] = usage

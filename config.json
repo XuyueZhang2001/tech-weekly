@@ -28,6 +28,17 @@
     "hn_min_points": 10,
     "arxiv_max_results": 8
   },
+  "curation": {
+    "_comment": "选稿：让大模型判断「值不值得看」。enabled=false 则只用规则打分。threshold 是 0-10 的相关度阈值；pool_per_domain 是每领域送审条数；budget_cny 是本环节花费上限，超了自动退回规则分。",
+    "enabled": true,
+    "score_threshold": 6.0,
+    "pool_per_domain": 12,
+    "min_keep_per_domain": 4,
+    "topic_dedup": true,
+    "batch_size": 20,
+    "max_dedup_items": 40,
+    "budget_cny": 0.1
+  },
   "llm": {
     "_comment": "中文摘要。api_key 留空则读环境变量 LLM_API_KEY（GitHub Actions 用 Secrets）。换服务商只需改 base_url 和 model。",
     "enabled": true,
