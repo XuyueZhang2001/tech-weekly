@@ -22,9 +22,15 @@
     "cc": []
   },
   "fetch": {
+    "_comment": "retries 只对超时/5xx/429 生效，403·404 不重试。snapshot_fallback 让挂掉的源用上期内容补位；disable_after_failures 连续失败多少期后暂停抓取，cooldown_days 是暂停时长。单个信源可用 user_agent / referer / timeout_seconds / retries 覆盖这里的全局值。",
     "timeout_seconds": 25,
     "workers": 10,
+    "retries": 2,
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "snapshot_fallback": true,
+    "snapshot_per_source": 40,
+    "disable_after_failures": 4,
+    "cooldown_days": 21,
     "hn_min_points": 10,
     "arxiv_max_results": 8
   },

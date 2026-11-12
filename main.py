@@ -37,6 +37,7 @@ from email.utils import formataddr, formatdate, parsedate_to_datetime
 from xml.etree import ElementTree as ET
 
 import curate
+import health
 import translate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -112,16 +113,33 @@ class Article:
 # --------------------------------------------------------------------------- #
 # 网络
 # --------------------------------------------------------------------------- #
-def http_get(url: str, cfg: dict, accept: str = "*/*") -> str:
+RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504, 520, 522, 524}
+
+
+def http_get(url: str, cfg: dict, accept: str = "*/*", src: dict | None = None) -> str:
+    """GET 一个 URL 并解码。
+
+    `src` 是信源配置项，可以覆盖 `fetch` 里的全局设置：
+      - user_agent / accept_language / referer：有的站点会按 UA 或来源页拦
+      - timeout_seconds：慢站点单独放宽
+      - retries：重试次数
+
+    重试只针对"可能自己好起来"的错误（超时、连接断开、5xx、429）。
+    403 / 404 这类是确定性失败，重试只是白发一次请求，还拖慢整轮抓取。
+    """
     fetch_cfg = cfg.get("fetch", {})
+    src = src or {}
     headers = {
-        "User-Agent": fetch_cfg.get("user_agent", "Mozilla/5.0"),
+        "User-Agent": src.get("user_agent") or fetch_cfg.get("user_agent", "Mozilla/5.0"),
         "Accept": accept,
-        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8",
+        "Accept-Language": src.get("accept_language") or "en-US,en;q=0.9,zh-CN;q=0.8",
     }
-    timeout = int(fetch_cfg.get("timeout_seconds", 25))
+    if src.get("referer"):
+        headers["Referer"] = src["referer"]
+    timeout = int(src.get("timeout_seconds") or fetch_cfg.get("timeout_seconds", 25))
+    retries = max(0, int(src.get("retries", fetch_cfg.get("retries", 2))))
     last_err = None
-    for attempt in range(2):
+    for attempt in range(retries + 1):
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -134,10 +152,16 @@ def http_get(url: str, cfg: dict, accept: str = "*/*") -> str:
             if m:
                 charset = m.group(1)
             return raw.decode(charset, "replace")
+        except urllib.error.HTTPError as exc:
+            last_err = exc
+            if exc.code not in RETRYABLE_STATUS:
+                raise                       # 403/404 等：不重试
+            if attempt < retries:
+                time.sleep(min(2 ** attempt, 6))
         except Exception as exc:  # noqa: BLE001 - 网络错误一律降级处理
             last_err = exc
-            if attempt == 0:
-                time.sleep(1.5)
+            if attempt < retries:
+                time.sleep(min(2 ** attempt, 6))
     raise last_err  # type: ignore[misc]
 
 
@@ -284,7 +308,9 @@ def key_of(article: Article) -> str:
 # 各类型信源抓取
 # --------------------------------------------------------------------------- #
 def fetch_rss(src: dict, domain: str, cfg: dict):
-    xml = http_get(src["url"], cfg, "application/rss+xml, application/atom+xml, application/xml, text/xml, */*")
+    xml = http_get(src["url"], cfg,
+                   "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+                   src=src)
     root = ET.fromstring(xml)
     nodes = [el for el in root.iter() if _strip_ns(el.tag) in ("item", "entry")]
 
@@ -348,7 +374,7 @@ def fetch_arxiv(src: dict, domain: str, cfg: dict) -> list:
     url = ("https://export.arxiv.org/api/query?search_query=%s"
            "&sortBy=submittedDate&sortOrder=descending&max_results=%d"
            % (urllib.parse.quote(query), max_results))
-    xml = http_get(url, cfg, "application/atom+xml")
+    xml = http_get(url, cfg, "application/atom+xml", src=src)
     root = ET.fromstring(xml)
     keywords = [str(k).lower() for k in src.get("keywords", [])]
     items = []
@@ -438,7 +464,7 @@ def fetch_hackernews(src: dict, domain: str, cfg: dict) -> list:
                "&numericFilters=created_at_i>%d,points>%d&hitsPerPage=15"
                % (urllib.parse.quote(query), since, min_points))
         try:
-            data = json.loads(http_get(url, cfg, "application/json"))
+            data = json.loads(http_get(url, cfg, "application/json", src=src))
         except Exception as exc:  # noqa: BLE001
             warn("HN 查询失败 query=%s: %s" % (query, exc))
             continue
@@ -474,7 +500,7 @@ def fetch_hackernews(src: dict, domain: str, cfg: dict) -> list:
 def fetch_huggingface_papers(src: dict, domain: str, cfg: dict) -> list:
     limit = int(src.get("limit", 12))
     url = "https://huggingface.co/api/daily_papers?limit=%d" % limit
-    data = json.loads(http_get(url, cfg, "application/json"))
+    data = json.loads(http_get(url, cfg, "application/json", src=src))
     items = []
     for entry in data:
         paper = entry.get("paper") or {}
@@ -524,14 +550,14 @@ def fetch_pubmed(src: dict, domain: str, cfg: dict) -> list:
     esearch = ("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
                "?db=pubmed&retmode=json&sort=date&retmax=%d&datetype=pdat&mindate=%s&maxdate=%s"
                "&term=%s" % (retmax, mindate, maxdate, urllib.parse.quote(term)))
-    data = json.loads(http_get(esearch, cfg, "application/json"))
+    data = json.loads(http_get(esearch, cfg, "application/json", src=src))
     ids = (data.get("esearchresult") or {}).get("idlist") or []
     if not ids:
         raise ValueError("PubMed 最近 %d 天没有命中" % days)
 
     efetch = ("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
               "?db=pubmed&retmode=xml&id=%s" % ",".join(ids))
-    root = ET.fromstring(http_get(efetch, cfg, "application/xml"))
+    root = ET.fromstring(http_get(efetch, cfg, "application/xml", src=src))
 
     items = []
     for art in root.findall(".//PubmedArticle"):
@@ -632,7 +658,8 @@ def _bing_fetch_root(query: str, cfg: dict):
         try:
             with BING_LOCK:                      # 串行化，避免并发触发限流
                 xml = http_get(url, cfg,
-                               "application/rss+xml, application/atom+xml, text/xml, */*")
+                               "application/rss+xml, application/atom+xml, text/xml, */*",
+                               src=src)
                 time.sleep(0.35)
             root = ET.fromstring(xml)            # 返回 HTML 时会在这里抛解析错误
             if _strip_ns(root.tag) != "rss":
@@ -854,8 +881,37 @@ FETCHERS = {
 }
 
 
+def _articles_from_snapshot(src: dict, domain_id: str, snap: list) -> list:
+    """把 health.snapshot_of() 存下的小快照还原成 Article。"""
+    out = []
+    for item in snap:
+        if not isinstance(item, dict):
+            continue
+        published = _parse_dt(item.get("published") or "")
+        if published is None:
+            continue
+        out.append(Article(
+            title=item.get("title") or "",
+            url=item.get("url") or "",
+            source=src.get("name", "?"),
+            domain=domain_id,
+            published=published,
+            summary=item.get("summary") or "",
+            weight=int(item.get("weight") or 10),
+            kind=item.get("kind") or "article",
+            points=int(item.get("points") or 0),
+            group=item.get("group") or "",
+        ))
+    return out
+
+
 def collect(cfg: dict):
-    """并发抓取全部信源。返回 (articles, source_status)。"""
+    """并发抓取全部信源。返回 (articles, source_status)。
+
+    每个源的结果都会记进 `cache/source-state.json`：成功就存一份快照，
+    失败就累计次数。下次这个源挂掉时，用快照补位而不是让栏目空着；
+    连续失败够多就先停抓一段时间，避免每期白发请求。
+    """
     jobs = []
     for dom in cfg.get("domains", []):
         if not dom.get("enabled", True):
@@ -865,15 +921,42 @@ def collect(cfg: dict):
                 continue          # 单个信源可临时停用，不必删除配置
             jobs.append((dom["id"], src))
 
+    fetch_cfg = cfg.get("fetch", {})
+    use_state = bool(fetch_cfg.get("snapshot_fallback", True))
+    disable_after = int(fetch_cfg.get("disable_after_failures", 4) or 0)
+    cooldown_days = int(fetch_cfg.get("cooldown_days", 21) or 0)
+    snap_limit = int(fetch_cfg.get("snapshot_per_source", 40) or 40)
+    state_path = os.environ.get("TECH_WEEKLY_STATE") or health.default_path(HERE)
+    state = health.load(state_path) if (use_state or disable_after) else health.empty_state()
+    now = datetime.now(timezone.utc)
+
     articles, status = [], []
-    workers = max(1, int(cfg.get("fetch", {}).get("workers", 10)))
+    workers = max(1, int(fetch_cfg.get("workers", 10)))
     with cf.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {}
         for domain_id, src in jobs:
+            name = src.get("name", src.get("url", "?"))
             fn = FETCHERS.get(src.get("type", "rss"))
             if fn is None:
-                status.append({"domain": domain_id, "source": src.get("name", "?"), "ok": False,
+                status.append({"domain": domain_id, "source": name, "ok": False,
                                "error": "未知信源类型 %s" % src.get("type")})
+                continue
+            if disable_after and health.is_disabled(state, name, now):
+                # 冷却期内：不请求，能补就补，补不上就空着
+                snap = health.snapshot(state, name) if use_state else []
+                got = _articles_from_snapshot(src, domain_id, snap)
+                articles.extend(got)
+                until = health.disabled_until(state, name)[:10]
+                status.append({"domain": domain_id, "source": name, "ok": False,
+                               "count": len(got), "fallback": bool(got),
+                               "disabled": True, "until": until,
+                               "error": "连续 %d 期失败，已暂停至 %s"
+                                        % (health.fail_streak(state, name), until)})
+                if got:
+                    warn("  ⏸ %-38s 已暂停抓取，用上期快照补 %d 条（%s 后重试）"
+                         % (name[:38], len(got), until))
+                else:
+                    warn("  ⏸ %-38s 已暂停抓取（无快照，本期跳过）" % name[:38])
                 continue
             futures[pool.submit(fn, src, domain_id, cfg)] = (domain_id, src)
         for fut in cf.as_completed(futures):
@@ -887,15 +970,34 @@ def collect(cfg: dict):
                 articles.extend(got)
                 status.append({"domain": domain_id, "source": name, "ok": True, "count": len(got),
                                "filtered": before - len(got)})
+                if use_state:
+                    health.record_success(state, name, health.snapshot_of(got, snap_limit), now)
                 if before != len(got):
                     log("  ✓ %-38s %3d 条（按主题过滤掉 %d 条）"
                         % (name[:38], len(got), before - len(got)))
                 else:
                     log("  ✓ %-38s %3d 条" % (name[:38], len(got)))
             except Exception as exc:  # noqa: BLE001
+                err = "%s: %s" % (type(exc).__name__, str(exc)[:160])
+                snap = health.snapshot(state, name) if use_state else []
+                got = _articles_from_snapshot(src, domain_id, snap)
+                if disable_after:
+                    health.record_failure(state, name, err, disable_after, cooldown_days, now)
+                articles.extend(got)
                 status.append({"domain": domain_id, "source": name, "ok": False,
-                               "error": "%s: %s" % (type(exc).__name__, str(exc)[:160])})
-                warn("  ✗ %-38s %s" % (name[:38], str(exc)[:120]))
+                               "count": len(got), "fallback": bool(got), "error": err})
+                if got:
+                    warn("  ✗ %-38s %s（用上期快照补 %d 条）"
+                         % (name[:38], str(exc)[:100], len(got)))
+                else:
+                    warn("  ✗ %-38s %s" % (name[:38], str(exc)[:120]))
+
+    if use_state or disable_after:
+        try:
+            health.prune(state)
+            health.save(state_path, state)
+        except Exception as exc:  # noqa: BLE001 - 状态存不下不影响本期
+            warn("信源状态保存失败：%s" % str(exc)[:120])
     return articles, status
 
 
@@ -1305,7 +1407,7 @@ def render_text(report: dict, cfg: dict) -> str:
     if st["sources_degraded"]:
         lines.append("异常信源：")
         for s in st["sources_degraded"]:
-            lines.append("  - %s: %s" % (s["source"], s.get("error", "")))
+            lines.append("  - %s: %s" % (s["source"], _degraded_note(s)))
     lines.append("")
     lines.append(rep.get("footer", ""))
     lines.append("生成时间：%s" % report["generated_at"].astimezone(tz).strftime("%Y-%m-%d %H:%M:%S %z"))
@@ -1314,6 +1416,15 @@ def render_text(report: dict, cfg: dict) -> str:
 
 def _esc(text: str) -> str:
     return html.escape(text or "", quote=True)
+
+
+def _degraded_note(status: dict) -> str:
+    """异常信源那一行说什么：暂停？用快照补了多少条？还是纯失败？"""
+    if status.get("disabled"):
+        return "已暂停抓取（%s 后重试）" % (status.get("until") or "稍后")
+    if status.get("fallback"):
+        return "%s（已用上期快照补 %d 条）" % (status.get("error", ""), status.get("count", 0))
+    return status.get("error", "")
 
 
 def render_html(report: dict, cfg: dict) -> str:
@@ -1397,7 +1508,8 @@ def render_html(report: dict, cfg: dict) -> str:
         parts.append("  </div>\n")
 
     if st["sources_degraded"]:
-        rows = "".join('<li style="margin:2px 0;">%s — %s</li>' % (_esc(s["source"]), _esc(s.get("error", "")))
+        rows = "".join('<li style="margin:2px 0;">%s — %s</li>'
+                       % (_esc(s["source"]), _esc(_degraded_note(s)))
                        for s in st["sources_degraded"])
         parts.append("""
   <div style="margin-top:26px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 16px;">

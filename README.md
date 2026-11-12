@@ -201,13 +201,20 @@ setx LLM_API_KEY "sk-xxxxxxxx"
     "enabled": true,         // false 则完全不调用大模型
     "base_url": "https://api.deepseek.com",
     "api_key": "",           // 留空则读 LLM_API_KEY
-    "model": "deepseek-chat",
+    "model": "deepseek-flash",
+    "thinking": "disabled",  // DeepSeek V4 默认开思考模式，翻译/选稿都不需要
     "batch_size": 10,        // 每次请求合并多少条（越大越省，越大越容易漏条目）
     "use_cache": true,       // 译文落盘缓存
     "max_retries": 3,
     "price_in_per_m": 2.0, "price_out_per_m": 8.0, "currency": "CNY"
   },
-  "fetch": { "timeout_seconds": 25, "workers": 10, "hn_min_points": 10 },
+  "fetch": {
+    "timeout_seconds": 25, "workers": 10, "hn_min_points": 10,
+    "retries": 2,                // 只对超时/5xx/429 重试，403·404 不重试
+    "snapshot_fallback": true,   // 源挂了用上期快照补位
+    "disable_after_failures": 4, // 连续失败 4 期后暂停抓取
+    "cooldown_days": 21          // 暂停多久后自动重试
+  },
   "domains": [
     {
       "id": "ai",
@@ -419,10 +426,16 @@ HN 源还有两个专用参数：
 ## 五、它内部是怎么做的
 
 1. **并发抓取**：按 `workers` 起线程池同时拉全部信源；单个源超时/报错/改版只会被记进"异常信源"，
-   不影响其他源和整封邮件。
-2. **时间窗过滤**：只保留 `window_days` 天内的条目。信源时间戳如果跑到未来（时区填错的常见症状），
+   不影响其他源和整封邮件。重试只针对"可能自己好起来"的错误（超时、连接断开、5xx、429），
+   **403 / 404 这类确定性失败不重试**——白跑一次还拖慢整轮。单个源可以用 `user_agent` /
+   `referer` / `timeout_seconds` / `retries` 覆盖全局设置。
+2. **失败回落上期快照**：每个源上次抓到的内容都存在 `cache/source-state.json` 里。
+   这周挂了就用上期内容补位，并在邮件底部注明"已用上期快照补 N 条"，
+   而不是让栏目空着一块。连续 `disable_after_failures` 期失败会暂停抓取
+   `cooldown_days` 天，冷却结束自动重试——源修好了能自己回来。
+3. **时间窗过滤**：只保留 `window_days` 天内的条目。信源时间戳如果跑到未来（时区填错的常见症状），
    会被收敛到当前时间，避免虚假置顶。
-3. **去重**：三层。
+4. **去重**：三层。
    ① 按正文链接归一化（去掉 `utm_*` 等追踪参数、去 `www.`、去尾部斜杠）；
    ② 按标题完全一致合并——专门处理"腾讯/搜狐/新浪分别转载同一篇稿子"；
    ③ 对**每节已选出的条目**再做近似去重，合并"同一事件、标题措辞不同"的重复。
@@ -430,26 +443,26 @@ HN 源还有两个专用参数：
    因为字符 n-gram 对英文几乎失效——任意两段英文都共享大量字母组合（th / he / in / er…），
    实测两篇毫不相关的长标题余弦也有 0.41，会稳定穿过 0.39 的阈值，把不同事件误合并。
    被合并的条目会作为"相关"链接挂在保留的那条下面。
-4. **规则打分**：来源权重 × 时间新鲜度 + 关键词命中数 + 论文加分 + HN 热度加分；
+5. **规则打分**：来源权重 × 时间新鲜度 + 关键词命中数 + 论文加分 + HN 热度加分；
    标题含"被捕/起诉/诉讼"等案件八卦词会**降权 14 分**，综述类论文小幅降权；
    融资/股价/估值等财经措辞也降权 4.5 分（生物医药领域的融资不降，因为那是行业信号），
    避免同一笔融资被多家媒体反复顶上首页。
-5. **大模型选稿**（`curation`，可关）：规则分只能回答"新不新、来源靠不靠谱"，
+6. **大模型选稿**（`curation`，可关）：规则分只能回答"新不新、来源靠不靠谱"，
    回答不了"值不值得看"。这一步把每领域前 `pool_per_domain` 条送给模型，
    按一条写死的编辑标准打 0-10 的相关度分（技术深度、新颖度、影响面、证据强度…），
    低于 `score_threshold` 的丢掉；再把"同一事件、不同标题"的条目合并。
    每领域有 `min_keep_per_domain` 保底，不会把某个栏目清空；花费有 `budget_cny` 上限，
    超了就退回规则分。**任何失败都自动降级**，绝不因为选稿挂了而发不出周报。
-6. **信源级精度过滤**：见第四节。定位型信源（PubMed 脑机接口）和杂食型媒体（cnBeta）
+7. **信源级精度过滤**：见第四节。定位型信源（PubMed 脑机接口）和杂食型媒体（cnBeta）
    都要过一遍自己的关键词，避免"顺带提一句"的内容混进来。
-7. **每领域配额 + 子分组保底 + 同源打散**：按 `max_items` 取前 N 条，取的时候轮转不同来源，
+8. **每领域配额 + 子分组保底 + 同源打散**：按 `max_items` 取前 N 条，取的时候轮转不同来源，
    避免整节被同一个源包场；有 `group` 的领域先按比例给子分组分名额（脑机接口就是靠这个
    在生物医药里保住一席）；某组没用满的名额会被其他组的剩余内容回收。
    窗口内条目不足时用稍旧条目补足并标注"稍早"。
-8. **中文摘要**：见上一节。只翻入选的 20 多条，不翻全部候选，所以成本可控。
-9. **渲染**：同一份内容渲染成纯文本和 HTML 两个部分（`multipart/alternative`），
-   邮件客户端不支持 HTML 时自动降级；主题和发件人中文名按 RFC 2047 编码。
-10. **发送**：SSL（465）或 STARTTLS（587）由 `smtp.ssl` / `smtp.starttls` 控制。
+9. **中文摘要**：见上一节。只翻入选的 20 多条，不翻全部候选，所以成本可控。
+10. **渲染**：同一份内容渲染成纯文本和 HTML 两个部分（`multipart/alternative`），
+    邮件客户端不支持 HTML 时自动降级；主题和发件人中文名按 RFC 2047 编码。
+11. **发送**：SSL（465）或 STARTTLS（587）由 `smtp.ssl` / `smtp.starttls` 控制。
     一条都没抓到时不发空邮件；中文摘要全军覆没时也不发（见上一节的表格）。
 
 ---
@@ -507,6 +520,7 @@ tech-weekly/
 ├─ main.py                      # 主程序：抓取 / 去重 / 排序 / 渲染 / 发信 / CLI
 ├─ translate.py                 # 中文摘要：批量请求、缓存、计费、容错解析
 ├─ curate.py                    # 大模型选稿：相关度打分、主题去重、预算闸门
+├─ health.py                     # 信源健康度：失败计数、上期快照、冷却停抓
 ├─ config.json                  # 领域、信源、关键词、收件人、SMTP、LLM、选稿配置
 ├─ run-weekly.ps1               # Windows 本地一键运行
 ├─ docs/参考项目调研.md            # 同类开源项目对比与改造清单
@@ -514,6 +528,7 @@ tech-weekly/
 ├─ tests/test_translate_flow.py # 中文摘要端到端测试（本地假大模型）
 ├─ tests/test_web_search.py     # 网页搜索信源测试（本地假搜索服务）
 ├─ tests/test_dedup.py          # 标题相似度与选稿解析回归测试（不联网）
+├─ tests/test_health.py         # 信源健康度与快照回退测试（不联网）
 ├─ .github/workflows/weekly.yml # GitHub Actions 定时任务
 ├─ cache/                       # 中文摘要缓存，已被 .gitignore 忽略
 └─ out/                         # 生成的预览（HTML + TXT），已被 .gitignore 忽略
@@ -528,6 +543,7 @@ python tests/test_smtp_flow.py             # 发信链路测试（本地回环�
 python tests/test_translate_flow.py        # 中文摘要测试（本地假模型，不联网、不花钱）
 python tests/test_web_search.py            # 网页搜索测试（本地假服务，不联网、不花钱）
 python tests/test_dedup.py                 # 标题去重与选稿解析测试（不联网、不花钱）
+python tests/test_health.py                # 信源健康度与快照回退测试（不联网、不花钱）
 ```
 
 ---
