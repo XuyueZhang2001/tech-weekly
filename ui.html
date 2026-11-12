@@ -398,8 +398,10 @@ function renderDomains() {
 
     const kw = el("div", "row");
     kw.style.marginTop = "8px";
-    kw.innerHTML = `<div class="field" style="flex:1"><label>关键词（逗号分隔，规则打分用）</label>
-      <input type="text" data-path="domains[${di}].keywords" data-list="comma" value="${esc((dom.keywords || []).join(", "))}"></div>`;
+    kw.innerHTML = `<div class="field" style="flex:1"><label>关键词（逗号分隔）</label>
+      <input type="text" placeholder="例如：agent, 多模态, llm（不要加方括号和引号）"
+             data-path="domains[${di}].keywords" data-list="comma" value="${esc((dom.keywords || []).join(", "))}">
+      <span class="hint">逗号分隔的纯文本。用于打分加分，以及部分信源的硬过滤。</span></div>`;
     card.appendChild(kw);
 
     const table = el("table");
@@ -631,7 +633,11 @@ document.addEventListener("input", (ev) => {
   if (path === "smtp.recipients" || path === "smtp.cc" || node.dataset.list === "line") {
     setPath(path, node.value.split("\n").map(s => s.trim()).filter(Boolean));
   } else if (node.dataset.list === "comma") {
-    setPath(path, node.value.split(/[,，]/).map(s => s.trim()).filter(Boolean));
+    // 有人会顺手把 JSON 数组贴进来（["a", "b"]），这里把方括号和引号洗掉，
+    // 否则关键词会变成 ["a" 和 "b"] 这种没法匹配的字符串
+    setPath(path, node.value.split(/[,，]/)
+      .map(s => s.trim().replace(/^[\[\]"'“”]+|[\[\]"'“”]+$/g, "").trim())
+      .filter(Boolean));
   } else if (node.type === "checkbox") {
     setPath(path, node.checked);
   } else if (node.type === "number") {
