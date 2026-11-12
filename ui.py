@@ -485,6 +485,12 @@ class Handler(BaseHTTPRequestHandler):
                 args += ["--days", str(int(body["days"]))]
             if body.get("use_llm") is False and mode == "preview":
                 args.append("--no-llm")
+            # 临时收件人：只拼进本次命令行，不写 config.json（仓库是公开的）
+            to = str(body.get("to") or "").strip()
+            if to and mode == "send":
+                if not EMAIL_RE.match(to.split(",")[0].strip()):
+                    return self._json({"ok": False, "error": "临时收件人不是合法邮箱"}, 400)
+                args += ["--to", to]
             return self._json({"ok": True, "job": start_job(args)})
 
         if path == "/api/git/commit":

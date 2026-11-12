@@ -140,12 +140,20 @@
 
     <div class="card">
       <div class="field"><label>收件人（一行一个）</label><textarea data-path="smtp.recipients" data-list="line"></textarea></div>
+      <p class="hint" style="margin:6px 0 0">
+        ⚠️ 这里填的会写进 <code>config.json</code> 并推到公开仓库。线上发信读的是 GitHub Secret
+        <code>MAIL_TO</code>，所以平时留空即可；本地想试发，用下面「运行与预览」里的临时收件人。
+      </p>
       <div class="field" style="margin-top:10px"><label>抄送（一行一个，可空）</label><textarea data-path="smtp.cc" data-list="line"></textarea></div>
     </div>
 
     <div class="card">
-      <div style="font-weight:600;margin-bottom:6px">密钥状态</div>
-      <p class="hint" style="margin-top:0">这里只显示「配没配」，不会显示值，也不会写进 config.json。要设置请用环境变量或系统设置。</p>
+      <div style="font-weight:600;margin-bottom:6px">密钥状态（本机）</div>
+      <p class="hint" style="margin-top:0">
+        只反映<strong>本机</strong>的环境变量，不会显示值，也不会写进 config.json。<br>
+        GitHub Actions 定时任务用的是仓库里的 Secrets（Settings → Secrets and variables → Actions），
+        所以这里显示「未配置」而线上能正常发信，是正常的。要在本机试发，用下面的临时收件人。
+      </p>
       <div id="secretsBox"></div>
     </div>
   </section>
@@ -214,9 +222,13 @@
         <button id="btnPreviewNoLlm">生成预览（不调模型）</button>
       </div>
       <div class="row" style="margin-top:12px">
+        <div class="field" style="flex:1"><label>临时收件人（只本次生效，不写入 config.json）</label>
+          <input type="text" id="tmpTo" placeholder="留空则用 MAIL_TO 环境变量 / GitHub Secret"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
         <label class="row" style="gap:6px"><input type="checkbox" id="confirmSend"> 我确认要真的发信</label>
         <button id="btnSend" disabled>发送</button>
-        <span class="hint">发送会用「收件与投递」里配置的地址，无法撤回。</span>
+        <span class="hint">发送会用上面的临时收件人（若填了）或已配置的地址，无法撤回。</span>
       </div>
     </div>
     <div class="card">
@@ -673,7 +685,8 @@ $("#btnPreviewNoLlm").addEventListener("click", () => runJob("preview", { use_ll
 $("#confirmSend").addEventListener("change", (e) => { $("#btnSend").disabled = !e.target.checked; });
 $("#btnSend").addEventListener("click", () => {
   if (!confirm("确认用当前收件人真实发信？")) return;
-  runJob("send", { confirm: "send" });
+  const to = ($("#tmpTo").value || "").trim();
+  runJob("send", { confirm: "send", to });
 });
 
 load();
