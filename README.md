@@ -432,7 +432,8 @@ HN 源还有两个专用参数：
 2. **失败回落上期快照**：每个源上次抓到的内容都存在 `cache/source-state.json` 里。
    这周挂了就用上期内容补位，并在邮件底部注明"已用上期快照补 N 条"，
    而不是让栏目空着一块。连续 `disable_after_failures` 期失败会暂停抓取
-   `cooldown_days` 天，冷却结束自动重试——源修好了能自己回来。
+   `cooldown_days` 天，冷却结束自动重试——源修好了能自己回来。如果确认源已经修复、
+   不想等冷却期，跑 `python main.py reset --source "源名字"` 立刻解除暂停。
 3. **时间窗过滤**：只保留 `window_days` 天内的条目。信源时间戳如果跑到未来（时区填错的常见症状），
    会被收敛到当前时间，避免虚假置顶。
 4. **去重**：三层。
@@ -529,6 +530,7 @@ tech-weekly/
 ├─ tests/test_web_search.py     # 网页搜索信源测试（本地假搜索服务）
 ├─ tests/test_dedup.py          # 标题相似度与选稿解析回归测试（不联网）
 ├─ tests/test_health.py         # 信源健康度与快照回退测试（不联网）
+├─ tests/test_fetch.py          # 抓取层：重试策略、按源覆盖、Bing 解析（不联网）
 ├─ .github/workflows/weekly.yml # GitHub Actions 定时任务
 ├─ cache/                       # 中文摘要缓存，已被 .gitignore 忽略
 └─ out/                         # 生成的预览（HTML + TXT），已被 .gitignore 忽略
@@ -538,12 +540,15 @@ tech-weekly/
 
 ```bash
 python main.py test                        # 信源体检
+python main.py reset --source "Bing 新闻"   # 解除信源暂停（确认源修好之后用）
+python main.py reset --all                  # 解除全部暂停
 python main.py llm                         # 中文摘要自检（会真实调用一次接口，花费约 0.001 元）
 python tests/test_smtp_flow.py             # 发信链路测试（本地回环，需联网抓内容）
 python tests/test_translate_flow.py        # 中文摘要测试（本地假模型，不联网、不花钱）
 python tests/test_web_search.py            # 网页搜索测试（本地假服务，不联网、不花钱）
 python tests/test_dedup.py                 # 标题去重与选稿解析测试（不联网、不花钱）
 python tests/test_health.py                # 信源健康度与快照回退测试（不联网、不花钱）
+python tests/test_fetch.py                 # 抓取层测试（不联网、不花钱）
 ```
 
 ---

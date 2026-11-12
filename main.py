@@ -650,7 +650,7 @@ def _bing_real_url(link: str) -> str:
     return link
 
 
-def _bing_fetch_root(query: str, cfg: dict):
+def _bing_fetch_root(query: str, cfg: dict, src: dict | None = None):
     """取一个查询的 RSS；串行 + 退避重试，避开 Bing 的限流（返回 HTML 的情况）。"""
     url = "https://www.bing.com/news/search?q=%s&format=RSS" % urllib.parse.quote(query)
     last_err = None
@@ -693,7 +693,7 @@ def fetch_bing_news(src: dict, domain: str, cfg: dict) -> list:
     items, seen = [], set()
     for query in queries:
         try:
-            root = _bing_fetch_root(query, cfg)
+            root = _bing_fetch_root(query, cfg, src)
         except Exception as exc:  # noqa: BLE001
             warn("Bing 新闻查询失败 query=%s: %s" % (query, str(exc)[:120]))
             continue
@@ -1783,16 +1783,56 @@ def cmd_llm_test(cfg: dict) -> int:
     return 0 if ok == len(samples) else 1
 
 
+def cmd_reset(cfg: dict, source: str = "", all_sources: bool = False) -> int:
+    """清掉信源的失败计数与暂停标记，让它下一期重新尝试。
+
+    典型的用法：某个源被连续失败暂停了，但你确认它已经修好——
+    不想干等冷却期结束，就跑一次这个命令。快照会保留。
+    """
+    path = os.environ.get("TECH_WEEKLY_STATE") or health.default_path(HERE)
+    state = health.load(path)
+    if not state.get("sources"):
+        print("没有信源状态记录（%s），无需重置。" % path)
+        return 0
+
+    targets = []
+    if all_sources:
+        targets = list(state["sources"])
+    elif source:
+        for name in state["sources"]:
+            if source.lower() in name.lower():
+                targets.append(name)
+        if not targets:
+            print("没有匹配 %r 的信源。现有记录：%s"
+                  % (source, "、".join(sorted(state["sources"]))[:400]))
+            return 1
+    else:
+        print("用法：python main.py reset --source \"Bing 新闻\"   或   --all")
+        return 1
+
+    for name in targets:
+        rec = state["sources"][name]
+        rec["fail_streak"] = 0
+        rec["disabled_until"] = ""
+        rec["last_error"] = ""
+    health.save(path, state)
+    print("已重置 %d 个信源：%s" % (len(targets), "、".join(targets)))
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="每周科技周报生成与邮件推送")
-    parser.add_argument("command", choices=["test", "llm", "preview", "send", "run"],
+    parser.add_argument("command",
+                        choices=["test", "llm", "preview", "send", "run", "reset"],
                         help="test=信源体检 llm=中文摘要自检 preview=只生成不发 "
-                             "send=生成并发送 run=试发+正式发送")
+                             "send=生成并发送 run=试发+正式发送 reset=解除信源暂停")
     parser.add_argument("--config", default=DEFAULT_CONFIG, help="配置文件路径")
     parser.add_argument("--days", type=int, default=None, help="时间窗口天数（默认取 config）")
     parser.add_argument("--outdir", default=os.path.join(HERE, "out"), help="输出目录")
     parser.add_argument("--to", default=None, help="临时覆盖收件人，逗号分隔")
     parser.add_argument("--no-llm", action="store_true", help="本次不调用大模型，保留英文原文")
+    parser.add_argument("--source", default="", help="reset 用：按名称匹配（子串即可）")
+    parser.add_argument("--all", action="store_true", help="reset 用：重置全部信源")
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -1804,6 +1844,8 @@ def main(argv=None) -> int:
         return cmd_test(cfg)
     if args.command == "llm":
         return cmd_llm_test(cfg)
+    if args.command == "reset":
+        return cmd_reset(cfg, args.source, args.all)
     if args.command == "preview":
         return cmd_preview(cfg, days, args.outdir, use_llm=use_llm)
     if args.command == "send":
