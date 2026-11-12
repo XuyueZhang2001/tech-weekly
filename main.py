@@ -1634,11 +1634,45 @@ def build_subject(report: dict, cfg: dict) -> str:
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+def _merge_overlay(base, extra):
+    """把 extra 深合到 base 上：字典逐层合并，其它类型（含列表）直接覆盖。"""
+    if isinstance(base, dict) and isinstance(extra, dict):
+        out = dict(base)
+        for key, value in extra.items():
+            if key in out and isinstance(out[key], dict) and isinstance(value, dict):
+                out[key] = _merge_overlay(out[key], value)
+            else:
+                out[key] = value
+        return out
+    return extra
+
+
+def local_config_path(path: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(path)), "config.local.json")
+
+
 def load_config(path: str) -> dict:
     if not os.path.exists(path):
         raise SystemExit("找不到配置文件：%s" % path)
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+    # utf-8-sig：用记事本 / PowerShell 存过的文件会带 BOM，普通 utf-8 解析会直接报错。
+    # 这个项目是给人手动改的，必须容忍 BOM。
+    with open(path, "r", encoding="utf-8-sig") as fh:
+        cfg = json.load(fh)
+
+    # 本机私有配置：同目录的 config.local.json，已在 .gitignore 里。
+    # 每个人的 SMTP 授权码、API Key、自己的邮箱都该放这儿，而不是改 config.json——
+    # 后者要推仓库，是公开的。读取顺序：环境变量 > config.local.json > config.json
+    # （环境变量在 llm_config / resolve_mail 里各自覆盖，所以这里只做文件层合并）
+    local = local_config_path(path)
+    if os.path.exists(local):
+        try:
+            with open(local, "r", encoding="utf-8-sig") as fh:
+                overlay = json.load(fh)
+            if isinstance(overlay, dict):
+                cfg = _merge_overlay(cfg, overlay)
+        except Exception as exc:  # noqa: BLE001 - 本机配置坏了也不能让主流程挂掉
+            warn("config.local.json 读取失败，已忽略：%s" % str(exc)[:140])
+    return cfg
 
 
 def save_outputs(report: dict, cfg: dict, outdir: str):

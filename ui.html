@@ -98,6 +98,8 @@
   details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
   .tag { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: #eef1f5; color: var(--muted); }
   .tag.off { background: #fef2f2; color: var(--red); }
+  .flag { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+  .flag.on { color: var(--green); }
 </style>
 </head>
 <body>
@@ -148,6 +150,28 @@
     </div>
 
     <div class="card">
+      <div style="font-weight:600;margin-bottom:2px">本机凭据 · 发信账号</div>
+      <p class="hint" style="margin-top:0">
+        保存在 <code>config.local.json</code>，这个文件已被 git 忽略，不会被推上去。
+        留空再保存 = 删除该项。<br>
+        优先级：环境变量 &gt; 本机文件 &gt; config.json —— 所以上面「收件人」框请保持留空。
+      </p>
+      <div class="row">
+        <div class="field"><label>SMTP 账号 <span class="flag" data-flag="smtp_user"></span></label>
+          <input id="secSmtpUser" type="text" placeholder="you@163.com" autocomplete="off"></div>
+        <div class="field"><label>SMTP 授权码 <span class="flag" data-flag="smtp_password"></span></label>
+          <input id="secSmtpPass" type="password" placeholder="不是登录密码" autocomplete="new-password"></div>
+        <div class="field"><label>发件人地址（可空）</label>
+          <input id="secSender" type="text" placeholder="留空 = 与 SMTP 账号相同"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnSaveSmtp" class="primary">保存到本机</button>
+        <button id="btnClearLocal" class="danger">清除全部本机凭据</button>
+        <span id="localStatus" class="hint"></span>
+      </div>
+    </div>
+
+    <div class="card">
       <div style="font-weight:600;margin-bottom:6px">密钥状态（本机）</div>
       <p class="hint" style="margin-top:0">
         只反映<strong>本机</strong>的环境变量，不会显示值，也不会写进 config.json。<br>
@@ -186,6 +210,19 @@
       </div>
       <div class="row" style="margin-top:10px">
         <div class="field" style="flex:1"><label>base_url</label><input data-path="llm.base_url" type="text"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:2px">本机凭据 · 大模型 Key</div>
+      <p class="hint" style="margin-top:0">
+        同样存进 <code>config.local.json</code>。GitHub Actions 定时任务用的是仓库 Secrets 里的
+        <code>LLM_API_KEY</code>，两者互不影响。
+      </p>
+      <div class="row">
+        <div class="field" style="flex:1"><label>API Key <span class="flag" data-flag="llm_api_key"></span></label>
+          <input id="secLlmKey" type="password" placeholder="sk-..." autocomplete="off"></div>
+        <button id="btnSaveLlm" class="primary">保存到本机</button>
       </div>
     </div>
 
@@ -459,6 +496,30 @@ function renderSecrets(list) {
   if (!list || !list.length) box.innerHTML = '<p class="hint">没有可显示的密钥项。</p>';
 }
 
+function renderLocal(local) {
+  const flags = (local && local.flags) || {};
+  document.querySelectorAll("[data-flag]").forEach(node => {
+    const on = !!flags[node.dataset.flag];
+    node.textContent = on ? "· 已保存" : "· 未设置";
+    node.className = "flag" + (on ? " on" : "");
+  });
+  const st = $("#localStatus");
+  if (st) st.textContent = local?.exists ? "本机凭据文件：config.local.json（已被 git 忽略）" : "还没有本机凭据文件";
+}
+
+async function saveSecrets(payload, note) {
+  const r = await fetch("/api/secrets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-UI-Token": TOKEN },
+    body: JSON.stringify(payload)
+  });
+  const data = await r.json();
+  if (!data.ok) { setStatus(data.error || "保存失败", "err"); return false; }
+  renderLocal({ exists: data.exists, flags: data.flags });
+  setStatus(note || "已保存到本机", "ok");
+  return true;
+}
+
 function renderGit(git) {
   const b = $("#gitBadge");
   if (!git?.available) { b.className = "badge err"; b.textContent = "git 不可用"; return; }
@@ -478,6 +539,7 @@ async function load() {
   renderDomains();
   renderScalars();
   renderSecrets(data.secrets);
+  renderLocal(data.local);
   renderGit(data.git);
   dirty = false;
   $("#saveBadge").className = "badge ok";
@@ -687,6 +749,43 @@ $("#btnSend").addEventListener("click", () => {
   if (!confirm("确认用当前收件人真实发信？")) return;
   const to = ($("#tmpTo").value || "").trim();
   runJob("send", { confirm: "send", to });
+});
+
+$("#btnSaveSmtp").addEventListener("click", async () => {
+  const payload = {};
+  const user = $("#secSmtpUser").value.trim();
+  const pass = $("#secSmtpPass").value;
+  const sender = $("#secSender").value.trim();
+  if (user) payload.smtp_user = user;
+  if (pass) payload.smtp_password = pass;
+  if (sender) payload.sender = sender;
+  if (!Object.keys(payload).length) { setStatus("先填写要保存的内容", "err"); return; }
+  if (await saveSecrets(payload, "发信账号已保存到 config.local.json")) {
+    $("#secSmtpUser").value = "";
+    $("#secSmtpPass").value = "";
+    $("#secSender").value = "";
+  }
+});
+
+$("#btnSaveLlm").addEventListener("click", async () => {
+  const key = $("#secLlmKey").value.trim();
+  if (!key) { setStatus("先填写 API Key", "err"); return; }
+  if (await saveSecrets({ llm_api_key: key }, "API Key 已保存到 config.local.json")) {
+    $("#secLlmKey").value = "";
+  }
+});
+
+$("#btnClearLocal").addEventListener("click", async () => {
+  if (!confirm("删除 config.local.json 里的全部本机凭据？")) return;
+  const r = await fetch("/api/secrets/clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-UI-Token": TOKEN },
+    body: "{}"
+  });
+  const data = await r.json();
+  if (!data.ok) { setStatus(data.error || "清除失败", "err"); return; }
+  renderLocal({ exists: data.exists, flags: data.flags });
+  setStatus("本机凭据已清除", "ok");
 });
 
 load();

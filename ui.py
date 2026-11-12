@@ -30,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.json")
+LOCAL_PATH = os.path.join(HERE, "config.local.json")
 UI_PATH = os.path.join(HERE, "ui.html")
 OUT_DIR = os.path.join(HERE, "out")
 MAX_BODY = 2 * 1024 * 1024          # 配置文件不可能超过 2MB，超了就是有问题
@@ -68,7 +69,8 @@ SECRET_ENVS = {
 # 配置读写与校验
 # --------------------------------------------------------------------------- #
 def load_config() -> dict:
-    with open(CONFIG_PATH, encoding="utf-8") as fh:
+    # utf-8-sig：记事本 / PowerShell 保存的 JSON 会带 BOM
+    with open(CONFIG_PATH, encoding="utf-8-sig") as fh:
         return json.load(fh)
 
 
@@ -79,6 +81,67 @@ def save_config(cfg: dict) -> None:
         json.dump(cfg, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
     os.replace(tmp, CONFIG_PATH)
+
+
+# --------------------------------------------------------------------------- #
+# 本机私有配置（config.local.json，不进 git）
+# --------------------------------------------------------------------------- #
+# 界面要能保存每个人的邮箱和 Key，但不能写进 config.json——那要推仓库，是公开的。
+# config.local.json 已在 .gitignore 里，main.py 会把它深合到 config.json 之上；
+# 环境变量优先级更高，所以 GitHub Actions 里的 Secrets 仍然会盖过本机文件。
+SECRET_FIELDS = {
+    "smtp_user": ("smtp", "user"),          # SMTP 登录账号
+    "smtp_password": ("smtp", "password"),  # 授权码，不是登录密码
+    "sender": ("smtp", "sender"),           # 发件人地址，留空则用 SMTP 账号
+    "llm_api_key": ("llm", "api_key"),      # 大模型 Key
+}
+
+
+def load_local() -> dict:
+    try:
+        with open(LOCAL_PATH, encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001 - 没有就是空的，坏文件也不能拦住界面
+        return {}
+
+
+def save_local(data: dict) -> None:
+    tmp = LOCAL_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    os.replace(tmp, LOCAL_PATH)
+
+
+def local_flags() -> dict:
+    """只回"有没有"，绝不把值发回浏览器。"""
+    local = load_local()
+    out = {}
+    for field, (section, key) in SECRET_FIELDS.items():
+        out[field] = bool((local.get(section) or {}).get(key))
+    return out
+
+
+def update_local(payload: dict) -> dict:
+    """按字段更新本机配置：空字符串表示删除该字段。"""
+    local = load_local()
+    for field, (section, key) in SECRET_FIELDS.items():
+        if field not in payload:
+            continue
+        box = local.setdefault(section, {})
+        value = str(payload.get(field) or "").strip()
+        if value:
+            box[key] = value
+        else:
+            box.pop(key, None)
+        if not box:
+            local.pop(section, None)
+    if local:
+        save_local(local)
+    elif os.path.exists(LOCAL_PATH):
+        os.remove(LOCAL_PATH)
+    return local_flags()
 
 
 def _is_int(value, lo, hi) -> bool:
@@ -416,6 +479,11 @@ class Handler(BaseHTTPRequestHandler):
                 "ok": True,
                 "config": cfg,
                 "secrets": secrets_status(cfg),
+                "local": {
+                    "exists": os.path.exists(LOCAL_PATH),
+                    "flags": local_flags(),
+                    "path": LOCAL_PATH,
+                },
                 "git": git_status(),
                 "source_types": {k: v["label"] for k, v in SOURCE_TYPES.items()},
                 "type_defaults": {k: v["defaults"] for k, v in SOURCE_TYPES.items()},
@@ -463,6 +531,26 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 return self._json({"ok": False, "error": "写入失败：%s" % exc}, 500)
             return self._json({"ok": True, "saved": True, "git": git_status()})
+
+        if path == "/api/secrets":
+            body = self._body()
+            known = [f for f in SECRET_FIELDS if f in body]
+            if not known:
+                return self._json({"ok": False, "error": "没有可保存的字段"}, 400)
+            try:
+                flags = update_local(body)
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"ok": False, "error": "写入失败：%s" % exc}, 500)
+            return self._json({"ok": True, "flags": flags,
+                               "exists": os.path.exists(LOCAL_PATH)})
+
+        if path == "/api/secrets/clear":
+            try:
+                if os.path.exists(LOCAL_PATH):
+                    os.remove(LOCAL_PATH)
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"ok": False, "error": "删除失败：%s" % exc}, 500)
+            return self._json({"ok": True, "flags": local_flags(), "exists": False})
 
         if path == "/api/source/test":
             body = self._body()

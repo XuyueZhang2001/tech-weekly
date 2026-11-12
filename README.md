@@ -142,6 +142,16 @@ setx LLM_API_KEY "sk-xxxxxxxx"
 `setx` 之后要**新开一个终端**才生效。也可以直接填在 `config.json` 的 `smtp` / `llm` 段里，
 但那样请务必确认这个文件没有推到公开仓库。
 
+**更推荐的做法**：用界面把凭据存进 `config.local.json`（见下一节）。它已被 `.gitignore` 忽略，
+`main.py` 会把它深合到 `config.json` 之上。读取优先级：
+
+```
+环境变量  >  config.local.json  >  config.json
+```
+
+所以同一个人在不同机器上、或者 GitHub Actions 上，都可以用环境变量 / Secrets 覆盖，
+而本地开发时用文件更省事。
+
 ### 用图形界面改配置
 
 不想手改 1400 行的 JSON，可以开一个本地网页：
@@ -176,6 +186,9 @@ python app.py --install-shortcut  # 在桌面建快捷方式，以后双击就�
 
 - **密钥不会进 config.json**。界面里只显示状态，值仍旧从环境变量读；也正因为这样，
   改配置不需要碰密码。
+- **本机凭据单独存放**。「收件与投递」和「AI 与选稿」里各有一张「本机凭据」卡片，
+  填了会写进 `config.local.json`（已被 git 忽略），不会跟着配置推到仓库。
+  这是给"每个人用自己邮箱和 Key"准备的：别人拿到这个项目，只需要在界面里填一次。
 - **保存前会校验**：URL、权重范围、必填字段、领域 id 格式、同领域内信源重名…
   有错会列在底部，不会写坏文件。
 - **只监听 127.0.0.1**，所有写操作要带启动时随机生成的 token，
@@ -576,8 +589,10 @@ tech-weekly/
 ├─ tests/test_translate_flow.py # 中文摘要端到端测试（本地假大模型）
 ├─ tests/test_web_search.py     # 网页搜索信源测试（本地假搜索服务）
 ├─ tests/test_dedup.py          # 标题相似度与选稿解析回归测试（不联网）
-├─ tests/test_health.py         # 信源健康度与快照回退测试（不联网）
+├─ tests/test_config.py         # 本机配置合并、BOM、收件人优先级（不联网）
 ├─ tests/test_fetch.py          # 抓取层：重试策略、按源覆盖、Bing 解析（不联网）
+├─ tests/test_health.py         # 信源健康度与快照回退测试（不联网）
+├─ config.local.json            # 本机私有凭据（邮箱/授权码/Key），已被 .gitignore 忽略
 ├─ .github/workflows/weekly.yml # GitHub Actions 定时任务
 ├─ cache/                       # 中文摘要缓存，已被 .gitignore 忽略
 └─ out/                         # 生成的预览（HTML + TXT），已被 .gitignore 忽略
