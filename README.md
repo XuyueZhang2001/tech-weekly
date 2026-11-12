@@ -152,6 +152,17 @@ python ui.py --port 9000      # 换端口
 python ui.py --no-browser     # 不自动开浏览器
 ```
 
+想要更像"应用"而不是"网页"：
+
+```bash
+python app.py                     # 独立窗口：无地址栏、无标签页、独立任务栏图标
+python app.py --install-shortcut  # 在桌面建快捷方式，以后双击就用（不弹黑框）
+```
+
+`app.py` 是同一套界面的外壳：用 Chromium 的 `--app=` 模式开窗口，并给它一个
+单独的浏览器配置目录（`cache/app-window`），和你日常浏览的 Edge/Chrome 完全隔离。
+没装 Edge/Chrome 时会退回默认浏览器打开标签页。
+
 四个页签：
 
 | 页签 | 能改什么 |
@@ -557,6 +568,7 @@ tech-weekly/
 ├─ health.py                     # 信源健康度：失败计数、上期快照、冷却停抓
 ├─ ui.py                        # 本地配置界面（http.server，零依赖）
 ├─ ui.html                      # 界面本体（vanilla JS，单文件）
+├─ app.py                       # 桌面启动器：独立窗口 + 桌面快捷方式
 ├─ config.json                  # 领域、信源、关键词、收件人、SMTP、LLM、选稿配置
 ├─ run-weekly.ps1               # Windows 本地一键运行
 ├─ docs/参考项目调研.md            # 同类开源项目对比与改造清单
