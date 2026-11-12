@@ -23,6 +23,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -287,6 +289,64 @@ def git_status() -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# GitHub Secrets
+# --------------------------------------------------------------------------- #
+# GitHub 要求用 libsodium 的 crypto_box_seal 加密后上传。项目零依赖，
+# 所以用 nacl_lite 里手写的实现（已用 RFC 7748 向量和 PyNaCl 交叉验证）。
+GH_API = "https://api.github.com"
+
+
+def github_repo() -> dict:
+    """从 git remote 里认出 owner/repo，供界面预填。"""
+    code, out = _git("remote", "get-url", "origin")
+    if code != 0:
+        return {"remote": "", "repo": ""}
+    remote = out.strip().splitlines()[0] if out.strip() else ""
+    match = re.search(r"github\.com[:/]+([^/]+)/([^/]+?)(?:\.git)?$", remote)
+    return {"remote": remote, "repo": "%s/%s" % (match.group(1), match.group(2)) if match else ""}
+
+
+def _gh_request(method: str, path: str, token: str, payload: dict | None = None) -> dict:
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(
+        GH_API + path, data=data, method=method,
+        headers={"Accept": "application/vnd.github+json",
+                 "Authorization": "Bearer %s" % token,
+                 "User-Agent": "tech-weekly-ui/1.0",
+                 "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read().decode("utf-8", "replace")
+    return json.loads(raw) if raw.strip() else {}
+
+
+def push_secrets(token: str, repo: str, values: dict) -> dict:
+    """把 values 写进仓库的 Actions Secrets。返回每个名字的结果。"""
+    import nacl_lite
+
+    key_info = _gh_request("GET", "/repos/%s/actions/secrets/public-key" % repo, token)
+    public_key, key_id = key_info["key"], key_info["key_id"]
+    written, failed = [], {}
+    for name, value in values.items():
+        if not value:
+            continue
+        try:
+            sealed = nacl_lite.seal_base64(public_key, str(value))
+            _gh_request("PUT", "/repos/%s/actions/secrets/%s" % (repo, name), token,
+                        {"encrypted_value": sealed, "key_id": key_id})
+            written.append(name)
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:200]
+            except Exception:  # noqa: BLE001
+                pass
+            failed[name] = "HTTP %s %s" % (exc.code, detail)
+        except Exception as exc:  # noqa: BLE001
+            failed[name] = "%s: %s" % (type(exc).__name__, str(exc)[:160])
+    return {"written": written, "failed": failed}
+
+
+# --------------------------------------------------------------------------- #
 # 后台任务（体检 / 预览）
 # --------------------------------------------------------------------------- #
 JOBS = {}
@@ -496,6 +556,23 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/git":
             return self._json({"ok": True, "git": git_status()})
 
+        if path == "/api/github":
+            info = github_repo()
+            local = load_local()
+            smtp = local.get("smtp") or {}
+            llm = local.get("llm") or {}
+            ready = []
+            if llm.get("api_key"):
+                ready.append("LLM_API_KEY")
+            if smtp.get("user"):
+                ready.append("SMTP_USER")
+            if smtp.get("password"):
+                ready.append("SMTP_PASSWORD")
+            if smtp.get("sender") or smtp.get("user"):
+                ready.append("MAIL_FROM")
+            return self._json({"ok": True, "repo": info["repo"], "remote": info["remote"],
+                               "ready": ready})
+
         if path.startswith("/out/"):
             name = os.path.basename(path[len("/out/"):])
             if not name.endswith(".html"):
@@ -551,6 +628,58 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 return self._json({"ok": False, "error": "删除失败：%s" % exc}, 500)
             return self._json({"ok": True, "flags": local_flags(), "exists": False})
+
+        if path == "/api/github/secrets":
+            body = self._body()
+            token = str(body.get("token") or "").strip()
+            repo = str(body.get("repo") or "").strip() or github_repo()["repo"]
+            mail_to = str(body.get("mail_to") or "").strip()
+            if not token:
+                return self._json({"ok": False, "error": "缺少 GitHub Token"}, 400)
+            if not re.match(r"^[\w.-]+/[\w.-]+$", repo):
+                return self._json({"ok": False, "error": "仓库格式应为 owner/repo"}, 400)
+
+            # 值从本机凭据里取，不经过浏览器
+            local = load_local()
+            smtp = local.get("smtp") or {}
+            llm = local.get("llm") or {}
+            values = {}
+            if llm.get("api_key"):
+                values["LLM_API_KEY"] = llm["api_key"]
+            if smtp.get("user"):
+                values["SMTP_USER"] = smtp["user"]
+            if smtp.get("password"):
+                values["SMTP_PASSWORD"] = smtp["password"]
+            if smtp.get("sender") or smtp.get("user"):
+                values["MAIL_FROM"] = smtp.get("sender") or smtp.get("user")
+            if mail_to:
+                values["MAIL_TO"] = mail_to
+            if not values:
+                return self._json({"ok": False,
+                                   "error": "本机凭据是空的：先在「收件与投递 / AI」页保存账号和 Key"}, 400)
+            try:
+                result = push_secrets(token, repo, values)
+            except urllib.error.HTTPError as exc:
+                detail = ""
+                try:
+                    detail = exc.read().decode("utf-8", "replace")[:300]
+                except Exception:  # noqa: BLE001
+                    pass
+                if exc.code in (401, 403):
+                    hint = "（Token 无效，或没有 repo 权限）"
+                elif exc.code == 404:
+                    hint = "（仓库不存在，或 Token 没有该仓库的权限）"
+                else:
+                    hint = ""
+                return self._json({"ok": False,
+                                   "error": "GitHub 返回 HTTP %s %s %s" % (exc.code, detail, hint)}, 400)
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"ok": False, "error": "%s: %s" % (type(exc).__name__, str(exc)[:200])}, 500)
+
+            ok = not result["failed"]
+            return self._json({"ok": ok, "repo": repo,
+                               "written": result["written"], "failed": result["failed"]},
+                              200 if ok else 400)
 
         if path == "/api/source/test":
             body = self._body()

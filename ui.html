@@ -115,6 +115,7 @@
   <button data-tab="mail">收件与投递</button>
   <button data-tab="ai">AI 与选稿</button>
   <button data-tab="run">运行与预览</button>
+  <button data-tab="deploy">部署到 GitHub</button>
 </nav>
 
 <main>
@@ -273,7 +274,43 @@
       <pre class="log" id="jobLog">（日志会出现在这里）</pre>
       <div id="previewBox"></div>
     </div>
+  <section id="panel-deploy" class="panel">
+    <div class="card">
+      <div style="font-weight:600">把本机凭据写进 GitHub Secrets</div>
+      <p class="hint" style="margin-top:4px">
+        前面的「本机凭据」只对你本机生效。如果你打算让 GitHub Actions 定时发信，
+        还需要把同样的值写进仓库的 Secrets——这一步以前只能去网页上一个个点，现在可以一键完成。
+      </p>
+      <div class="row">
+        <div class="field"><label>仓库</label>
+          <input id="ghRepo" type="text" placeholder="owner/repo" style="min-width:260px"></div>
+        <div class="field" style="flex:1"><label>GitHub Token（只本次使用，不保存）</label>
+          <input id="ghToken" type="password" placeholder="ghp_… 或 github_pat_…" autocomplete="off"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="field" style="flex:1"><label>收件人（MAIL_TO，只写进 Secrets，不存本地）</label>
+          <input id="ghMailTo" type="text" placeholder="you@qq.com"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="btnPushSecrets" class="primary">写入 Secrets</button>
+        <span id="ghStatus" class="hint"></span>
+      </div>
+      <div id="ghReady" class="hint" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:6px">Token 怎么来</div>
+      <ol class="hint" style="margin:0;padding-left:20px">
+        <li>打开 <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer">github.com/settings/tokens/new</a>，选 classic token</li>
+        <li>Scopes 勾上 <code>repo</code>（写 Actions Secrets 需要它）</li>
+        <li>生成后粘贴到上面。用完可以直接在页面里删掉，本工具不会保存它</li>
+      </ol>
+      <p class="hint" style="margin-top:8px">
+        写入的值会先用仓库公钥加密（libsodium sealed box），再交给 GitHub——和网页上手动填写完全等价。
+      </p>
+    </div>
   </section>
+
 </main>
 
 <footer>
@@ -649,6 +686,7 @@ document.addEventListener("click", async (ev) => {
   if (tab) {
     document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b === btn));
     document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + tab));
+    if (tab === "deploy") loadGithub();
     return;
   }
   const action = btn.dataset.action;
@@ -786,6 +824,47 @@ $("#btnClearLocal").addEventListener("click", async () => {
   if (!data.ok) { setStatus(data.error || "清除失败", "err"); return; }
   renderLocal({ exists: data.exists, flags: data.flags });
   setStatus("本机凭据已清除", "ok");
+});
+
+async function loadGithub() {
+  const r = await fetch("/api/github");
+  const d = await r.json();
+  if (!d.ok) return;
+  if (!$("#ghRepo").value) $("#ghRepo").value = d.repo || "";
+  const ready = d.ready || [];
+  $("#ghReady").textContent = ready.length
+    ? "将写入：" + ready.join("、") + ($("#ghMailTo").value.trim() ? "、MAIL_TO" : "（收件人填了才会写 MAIL_TO）")
+    : "本机还没有凭据。先去「收件与投递」和「AI 与选稿」页保存账号和 Key。";
+}
+
+$("#btnPushSecrets").addEventListener("click", async () => {
+  const token = $("#ghToken").value.trim();
+  const repo = $("#ghRepo").value.trim();
+  if (!token) { setStatus("先填 GitHub Token", "err"); return; }
+  const btn = $("#btnPushSecrets");
+  btn.disabled = true;
+  $("#ghStatus").textContent = "写入中…";
+  try {
+    const r = await fetch("/api/github/secrets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-UI-Token": TOKEN },
+      body: JSON.stringify({ token, repo, mail_to: $("#ghMailTo").value.trim() })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      $("#ghStatus").textContent = "已写入：" + d.written.join("、");
+      $("#ghToken").value = "";
+      setStatus("Secrets 已写入 " + d.repo, "ok");
+    } else if (d.failed && Object.keys(d.failed).length) {
+      $("#ghStatus").textContent = "部分失败：" + JSON.stringify(d.failed);
+      setStatus("有字段写入失败", "err");
+    } else {
+      $("#ghStatus").textContent = d.error || "写入失败";
+      setStatus(d.error || "写入失败", "err");
+    }
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 load();

@@ -198,6 +198,26 @@ python app.py --install-shortcut  # 在桌面建快捷方式，以后双击就�
 推送需要 git 已经有可用凭据（一次性的设置：`git config --global credential.helper manager`，
 然后任意一次 push 时在弹窗里登录一次）。
 
+### 把凭据一键写进 GitHub Secrets
+
+如果用的是 GitHub Actions 定时发信，还需要把邮箱和 Key 写进仓库的 Secrets。
+以前只能去网页上一个个点，现在界面里第五个页签「部署到 GitHub」可以一键完成：
+
+1. 先在「收件与投递」「AI 与选稿」页把本机凭据填好
+2. 在 GitHub 生成一个 classic token，勾 `repo` 权限
+3. 切到「部署到 GitHub」，仓库名会自动从 `git remote` 识别，粘 token，填收件人，点「写入 Secrets」
+
+Token 只在内存里用一次，不落盘。写入前会用仓库公钥做 libsodium sealed box 加密，
+和网页上手动填写完全等价——这套加密是项目内 `nacl_lite.py` 手写的（见下），
+已用 RFC 7748 标准向量和 PyNaCl 交叉验证，并在真实仓库上验证过解密。
+
+### 关于 `nacl_lite.py`
+
+GitHub 的 Secrets API 要求把值用 libsodium 的 `crypto_box_seal` 加密，
+而本项目坚持零第三方依赖，所以按 NaCl 规范手写了一份（X25519 + HSalsa20/XSalsa20 + Poly1305）。
+只实现"加密"方向，够用即可。它是纯 Python，存在时序侧信道、也没有内存清零，
+用于加密短小的 API Key 在本机一次性执行是可以接受的，但不要拿它保护高价值长期密钥。
+
 ---
 
 ## 三、中文工作模式
@@ -582,6 +602,7 @@ tech-weekly/
 ├─ ui.py                        # 本地配置界面（http.server，零依赖）
 ├─ ui.html                      # 界面本体（vanilla JS，单文件）
 ├─ app.py                       # 桌面启动器：独立窗口 + 桌面快捷方式
+├─ nacl_lite.py                 # 纯 Python 的 sealed box，用于写 GitHub Secrets
 ├─ config.json                  # 领域、信源、关键词、收件人、SMTP、LLM、选稿配置
 ├─ run-weekly.ps1               # Windows 本地一键运行
 ├─ docs/参考项目调研.md            # 同类开源项目对比与改造清单
@@ -589,6 +610,7 @@ tech-weekly/
 ├─ tests/test_translate_flow.py # 中文摘要端到端测试（本地假大模型）
 ├─ tests/test_web_search.py     # 网页搜索信源测试（本地假搜索服务）
 ├─ tests/test_dedup.py          # 标题相似度与选稿解析回归测试（不联网）
+├─ tests/test_nacl.py           # sealed box：RFC 7748 向量 + PyNaCl 交叉验证
 ├─ tests/test_config.py         # 本机配置合并、BOM、收件人优先级（不联网）
 ├─ tests/test_fetch.py          # 抓取层：重试策略、按源覆盖、Bing 解析（不联网）
 ├─ tests/test_health.py         # 信源健康度与快照回退测试（不联网）
