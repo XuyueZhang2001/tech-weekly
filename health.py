@@ -23,6 +23,16 @@ from datetime import datetime, timedelta, timezone
 STATE_VERSION = 1
 
 
+def key(domain_id: str, name: str) -> str:
+    """状态键：领域 + 信源名。
+
+    不能只用名字——配置里 `Hacker News` 在 5 个领域各有一个（查询词不同），
+    `arXiv` 有 4 个。只按名字记状态的话，它们会共用一份快照和失败计数，
+    一个挂了会把其余的也标成失败。
+    """
+    return "%s|%s" % (domain_id or "", name or "")
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 

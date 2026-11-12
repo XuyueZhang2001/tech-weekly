@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tech-weekly 配置</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --line: #e3e6eb; --text: #111827;
+    --muted: #6b7280; --blue: #2563eb; --red: #dc2626; --green: #059669;
+    --amber: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    padding: 14px 22px; display: flex; align-items: center; gap: 14px;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header .spacer { flex: 1; }
+  .badge {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    background: #eef1f5; color: var(--muted); border: 1px solid var(--line);
+  }
+  .badge.dirty { background: #fff7ed; color: var(--amber); border-color: #fed7aa; }
+  .badge.ok { background: #ecfdf5; color: var(--green); border-color: #a7f3d0; }
+  .badge.err { background: #fef2f2; color: var(--red); border-color: #fecaca; }
+
+  nav { display: flex; gap: 4px; padding: 12px 22px 0; }
+  nav button {
+    border: 1px solid transparent; background: none; padding: 8px 14px;
+    border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; color: var(--muted);
+  }
+  nav button.active {
+    background: var(--card); border-color: var(--line); border-bottom-color: var(--card);
+    color: var(--text); font-weight: 600; margin-bottom: -1px;
+  }
+  main { padding: 0 22px 100px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin: 12px 0;
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input, select, textarea {
+    font: inherit; padding: 6px 9px; border: 1px solid var(--line);
+    border-radius: 7px; background: #fff; color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-color: #93c5fd; }
+  input[type=number] { width: 84px; }
+  textarea { width: 100%; min-height: 64px; resize: vertical; font-family: Consolas, monospace; font-size: 12.5px; }
+  button {
+    font: inherit; padding: 6px 12px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--line); background: #fff;
+  }
+  button:hover { background: #f3f4f6; }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  button.danger { color: var(--red); border-color: #fecaca; }
+  button.danger:hover { background: #fef2f2; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  td input[type=text] { width: 100%; min-width: 120px; }
+
+  .hint { color: var(--muted); font-size: 12.5px; }
+  .muted { color: var(--muted); }
+  .ok-text { color: var(--green); }
+  .err-text { color: var(--red); }
+  .warn-text { color: var(--amber); }
+
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--card);
+    border-top: 1px solid var(--line); padding: 12px 22px;
+    display: flex; gap: 10px; align-items: center; z-index: 20;
+  }
+  footer .spacer { flex: 1; }
+  #status { font-size: 13px; }
+  pre.log {
+    background: #0f172a; color: #cbd5e1; padding: 12px; border-radius: 8px;
+    max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  iframe.preview {
+    width: 100%; height: 620px; border: 1px solid var(--line);
+    border-radius: 8px; background: #fff;
+  }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  .tag { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: #eef1f5; color: var(--muted); }
+  .tag.off { background: #fef2f2; color: var(--red); }
+</style>
+</head>
+<body>
+<header>
+  <h1>tech-weekly 配置</h1>
+  <span id="gitBadge" class="badge">读取中…</span>
+  <span class="spacer"></span>
+  <span id="saveBadge" class="badge ok">没有未保存的改动</span>
+</header>
+
+<nav>
+  <button data-tab="domains" class="active">领域与信源</button>
+  <button data-tab="mail">收件与投递</button>
+  <button data-tab="ai">AI 与选稿</button>
+  <button data-tab="run">运行与预览</button>
+</nav>
+
+<main>
+  <section id="panel-domains" class="panel active">
+    <p class="hint">信源按类型出不同字段；不常用的字段收在「高级」里，直接写 JSON。</p>
+    <div id="domainsBox"></div>
+    <button id="addDomain">+ 添加领域</button>
+  </section>
+
+  <section id="panel-mail" class="panel">
+    <div class="card">
+      <div class="row">
+        <div class="field"><label>SMTP 服务器</label><input data-path="smtp.host" type="text" placeholder="smtp.163.com"></div>
+        <div class="field"><label>端口</label><input data-path="smtp.port" type="number"></div>
+        <div class="field"><label>加密方式</label>
+          <select data-path="smtp.mode">
+            <option value="ssl">SSL（465）</option>
+            <option value="starttls">STARTTLS（587）</option>
+            <option value="none">不加密</option>
+          </select>
+        </div>
+        <div class="field"><label>发件人显示名</label><input data-path="smtp.from_name" type="text"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="field"><label>收件人（一行一个）</label><textarea data-path="smtp.recipients" data-list="line"></textarea></div>
+      <div class="field" style="margin-top:10px"><label>抄送（一行一个，可空）</label><textarea data-path="smtp.cc" data-list="line"></textarea></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:6px">密钥状态</div>
+      <p class="hint" style="margin-top:0">这里只显示「配没配」，不会显示值，也不会写进 config.json。要设置请用环境变量或系统设置。</p>
+      <div id="secretsBox"></div>
+    </div>
+  </section>
+
+  <section id="panel-ai" class="panel">
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">报告</div>
+      <div class="row">
+        <div class="field"><label>标题</label><input data-path="report.title" type="text"></div>
+        <div class="field"><label>时间窗口（天）</label><input data-path="report.window_days" type="number"></div>
+        <div class="field"><label>每领域条数</label><input data-path="report.max_per_domain" type="number"></div>
+        <div class="field"><label>总条数上限</label><input data-path="report.max_total" type="number"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">大模型（中文摘要）</div>
+      <div class="row">
+        <div class="field"><label>模型</label><input data-path="llm.model" type="text"></div>
+        <div class="field"><label>思考模式</label>
+          <select data-path="llm.thinking">
+            <option value="disabled">关闭</option>
+            <option value="enabled">开启</option>
+            <option value="">不传（兼容其他服务商）</option>
+          </select>
+        </div>
+        <div class="field"><label>每次条数</label><input data-path="llm.batch_size" type="number"></div>
+        <div class="field"><label>max_tokens</label><input data-path="llm.max_tokens" type="number"></div>
+        <div class="field"><label>温度</label><input data-path="llm.temperature" type="number" step="0.1"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="field" style="flex:1"><label>base_url</label><input data-path="llm.base_url" type="text"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">选稿</div>
+      <div class="row">
+        <label class="row" style="gap:6px"><input type="checkbox" data-path="curation.enabled"> 启用大模型选稿</label>
+        <div class="field"><label>相关度阈值（0-10）</label><input data-path="curation.score_threshold" type="number" step="0.5"></div>
+        <div class="field"><label>每领域送审条数</label><input data-path="curation.pool_per_domain" type="number"></div>
+        <div class="field"><label>每领域保底</label><input data-path="curation.min_keep_per_domain" type="number"></div>
+        <div class="field"><label>预算上限（元）</label><input data-path="curation.budget_cny" type="number" step="0.01"></div>
+        <label class="row" style="gap:6px"><input type="checkbox" data-path="curation.topic_dedup"> 合并同一事件</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">抓取与信源健康度</div>
+      <div class="row">
+        <div class="field"><label>并发数</label><input data-path="fetch.workers" type="number"></div>
+        <div class="field"><label>超时（秒）</label><input data-path="fetch.timeout_seconds" type="number"></div>
+        <div class="field"><label>重试次数</label><input data-path="fetch.retries" type="number"></div>
+        <div class="field"><label>连续失败几期停抓</label><input data-path="fetch.disable_after_failures" type="number"></div>
+        <div class="field"><label>停抓天数</label><input data-path="fetch.cooldown_days" type="number"></div>
+        <label class="row" style="gap:6px"><input type="checkbox" data-path="fetch.snapshot_fallback"> 失败时用上期快照补位</label>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-run" class="panel">
+    <div class="card">
+      <div class="row">
+        <button id="btnTest">信源体检</button>
+        <button id="btnPreview" class="primary">生成预览（调模型）</button>
+        <button id="btnPreviewNoLlm">生成预览（不调模型）</button>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label class="row" style="gap:6px"><input type="checkbox" id="confirmSend"> 我确认要真的发信</label>
+        <button id="btnSend" disabled>发送</button>
+        <span class="hint">发送会用「收件与投递」里配置的地址，无法撤回。</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row"><strong id="jobTitle">还没有运行</strong><span id="jobMeta" class="hint"></span></div>
+      <pre class="log" id="jobLog">（日志会出现在这里）</pre>
+      <div id="previewBox"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <button id="btnSave" class="primary">保存</button>
+  <button id="btnCommit">提交并推送</button>
+  <span class="spacer"></span>
+  <span id="status"></span>
+</footer>
+
+<script>
+const TOKEN = "__UI_TOKEN__";
+let cfg = null;
+let dirty = false;
+let lastJob = null;
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+function setStatus(text, kind) {
+  const s = $("#status");
+  s.textContent = text || "";
+  s.className = kind === "err" ? "err-text" : kind === "ok" ? "ok-text" : "muted";
+}
+
+function markDirty() {
+  dirty = true;
+  const b = $("#saveBadge");
+  b.className = "badge dirty";
+  b.textContent = "有未保存的改动";
+}
+
+// 用 "a.b[0].c" 这样的路径读写嵌套对象
+function getPath(path) {
+  const parts = path.split(".");
+  let cur = cfg;
+  for (const p of parts) {
+    const m = p.match(/^(\w+)\[(\d+)\]$/);
+    if (m) { cur = cur?.[m[1]]?.[Number(m[2])]; }
+    else { cur = cur?.[p]; }
+    if (cur == null) return cur;
+  }
+  return cur;
+}
+
+function setPath(path, value) {
+  const parts = path.split(".");
+  let cur = cfg;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    const m = p.match(/^(\w+)\[(\d+)\]$/);
+    if (m) {
+      const k = m[1], idx = Number(m[2]);
+      if (!Array.isArray(cur[k])) cur[k] = [];
+      if (cur[k][idx] == null) cur[k][idx] = {};
+      cur = cur[k][idx];
+    } else {
+      if (cur[p] == null) cur[p] = {};
+      cur = cur[p];
+    }
+  }
+  const last = parts[parts.length - 1];
+  const m = last.match(/^(\w+)\[(\d+)\]$/);
+  if (m) { const k = m[1]; if (!Array.isArray(cur[k])) cur[k] = []; cur[k][Number(m[2])] = value; }
+  else { cur[last] = value; }
+  markDirty();
+}
+
+// ---------------- 渲染 ----------------
+function renderDomains() {
+  const box = $("#domainsBox");
+  box.innerHTML = "";
+  (cfg.domains || []).forEach((dom, di) => {
+    const card = el("div", "card");
+    const head = el("div", "row");
+    head.innerHTML = `
+      <div class="field"><label>名称</label><input type="text" data-path="domains[${di}].name" value="${esc(dom.name || "")}"></div>
+      <div class="field"><label>图标</label><input type="text" style="width:60px" data-path="domains[${di}].icon" value="${esc(dom.icon || "")}"></div>
+      <div class="field"><label>id</label><input type="text" style="width:110px" data-path="domains[${di}].id" value="${esc(dom.id || "")}"></div>
+      <div class="field"><label>每条</label><input type="number" data-path="domains[${di}].max_items" value="${dom.max_items ?? 6}"></div>
+      <label class="row" style="gap:6px"><input type="checkbox" data-path="domains[${di}].enabled" ${dom.enabled === false ? "" : "checked"}> 启用</label>
+      <span class="spacer" style="flex:1"></span>
+      <button class="danger" data-action="del-domain" data-di="${di}">删除领域</button>
+    `;
+    card.appendChild(head);
+
+    const kw = el("div", "row");
+    kw.style.marginTop = "8px";
+    kw.innerHTML = `<div class="field" style="flex:1"><label>关键词（逗号分隔，规则打分用）</label>
+      <input type="text" data-path="domains[${di}].keywords" data-list="comma" value="${esc((dom.keywords || []).join(", "))}"></div>`;
+    card.appendChild(kw);
+
+    const table = el("table");
+    table.innerHTML = `<thead><tr><th style="width:130px">类型</th><th>名称</th><th>主要字段</th><th style="width:80px">权重</th><th style="width:190px"></th></tr></thead>`;
+    const tbody = el("tbody");
+    (dom.sources || []).forEach((src, si) => tbody.appendChild(sourceRow(di, si, src)));
+    table.appendChild(tbody);
+    card.appendChild(table);
+
+    const foot = el("div", "row");
+    foot.style.marginTop = "8px";
+    const add = el("button", null, "+ 添加信源");
+    add.dataset.action = "add-source";
+    add.dataset.di = String(di);
+    foot.appendChild(add);
+    card.appendChild(foot);
+    box.appendChild(card);
+  });
+}
+
+function sourceRow(di, si, src) {
+  const tr = el("tr");
+
+  const tdType = el("td");
+  const sel = el("select");
+  sel.dataset.path = `domains[${di}].sources[${si}].type`;
+  (window.sourceTypes || []).forEach(([val, label]) => {
+    const o = el("option", null, label);
+    o.value = val;
+    if (val === src.type) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.dataset.action = "change-type";
+  sel.dataset.di = String(di); sel.dataset.si = String(si);
+  tdType.appendChild(sel);
+  tr.appendChild(tdType);
+
+  const tdName = el("td");
+  tdName.innerHTML = `<input type="text" data-path="domains[${di}].sources[${si}].name" value="${esc(src.name || "")}">`;
+  tr.appendChild(tdName);
+
+  const tdMain = el("td");
+  tdMain.appendChild(mainField(di, si, src));
+  tr.appendChild(tdMain);
+
+  const tdW = el("td");
+  tdW.innerHTML = `<input type="number" data-path="domains[${di}].sources[${si}].weight" value="${src.weight ?? 10}">`;
+  tr.appendChild(tdW);
+
+  const tdOps = el("td");
+  const test = el("button", null, "测试");
+  test.dataset.action = "test-source";
+  test.dataset.di = String(di); test.dataset.si = String(si);
+  const del = el("button", "danger", "删除");
+  del.style.marginLeft = "6px";
+  del.dataset.action = "del-source";
+  del.dataset.di = String(di); del.dataset.si = String(si);
+  tdOps.appendChild(test); tdOps.appendChild(del);
+  tr.appendChild(tdOps);
+
+  // 高级字段：除 type/name/weight/主字段外的所有键，直接改 JSON
+  const advRow = el("tr");
+  const advTd = el("td");
+  advTd.colSpan = 5;
+  const details = el("details");
+  const summary = el("summary", null, "高级字段（JSON）");
+  details.appendChild(summary);
+  const ta = el("textarea");
+  ta.value = JSON.stringify(extrasOf(src), null, 2);
+  ta.dataset.action = "extras";
+  ta.dataset.di = String(di); ta.dataset.si = String(si);
+  details.appendChild(ta);
+  advTd.appendChild(details);
+  advRow.appendChild(advTd);
+
+  const frag = document.createDocumentFragment();
+  frag.appendChild(tr); frag.appendChild(advRow);
+  return frag;
+}
+
+const PRIMARY = { rss: "url", huggingface_papers: "limit" };
+function mainField(di, si, src) {
+  const type = src.type || "rss";
+  const wrap = el("div", "field");
+  if (type === "rss") {
+    wrap.innerHTML = `<input type="text" placeholder="https://…/feed" data-path="domains[${di}].sources[${si}].url" value="${esc(src.url || "")}">`;
+  } else if (type === "huggingface_papers") {
+    wrap.innerHTML = `<input type="number" title="取多少篇" data-path="domains[${di}].sources[${si}].limit" value="${src.limit ?? 12}">`;
+  } else {
+    wrap.innerHTML = `<textarea style="min-height:44px" placeholder="每行一个查询词" data-path="domains[${di}].sources[${si}].queries" data-list="line">${esc((src.queries || []).join("\n"))}</textarea>`;
+  }
+  return wrap;
+}
+
+const RESERVED = ["type", "name", "weight", "url", "limit", "queries"];
+function extrasOf(src) {
+  const out = {};
+  Object.keys(src).forEach(k => { if (!RESERVED.includes(k)) out[k] = src[k]; });
+  return out;
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderScalars() {
+  document.querySelectorAll("[data-path]").forEach(node => {
+    if (node.dataset.action || node.closest("#domainsBox")) return;
+    const val = getPath(node.dataset.path);
+    if (node.type === "checkbox") node.checked = val !== false && val != null ? Boolean(val) : false;
+    else if (node.dataset.list === "line") node.value = Array.isArray(val) ? val.join("\n") : "";
+    else if (node.dataset.list === "comma") node.value = Array.isArray(val) ? val.join(", ") : "";
+    else node.value = val == null ? "" : val;
+  });
+  // smtp 的两种加密方式用一个下拉表示
+  const mode = cfg.smtp?.mode || (cfg.smtp?.ssl ? "ssl" : (cfg.smtp?.starttls ? "starttls" : "none"));
+  const sel = document.querySelector('[data-path="smtp.mode"]');
+  if (sel) sel.value = mode;
+}
+
+function renderSecrets(list) {
+  const box = $("#secretsBox");
+  box.innerHTML = "";
+  (list || []).forEach(item => {
+    const d = el("div", "row");
+    d.style.marginTop = "6px";
+    d.innerHTML = `<span class="tag ${item.configured ? "" : "off"}">${item.configured ? "已配置" : "未配置"}</span>
+      <code>${esc(item.name)}</code><span class="hint">${esc(item.label)}${item.source ? " · " + esc(item.source) : ""}</span>`;
+    box.appendChild(d);
+  });
+  if (!list || !list.length) box.innerHTML = '<p class="hint">没有可显示的密钥项。</p>';
+}
+
+function renderGit(git) {
+  const b = $("#gitBadge");
+  if (!git?.available) { b.className = "badge err"; b.textContent = "git 不可用"; return; }
+  b.className = "badge " + (git.dirty ? "dirty" : "ok");
+  b.textContent = `${git.branch}${git.dirty ? " · 有未提交改动" : " · 干净"}${git.ahead ? " · 领先 " + git.ahead : ""}`;
+}
+
+// ---------------- 数据加载与保存 ----------------
+async function load() {
+  setStatus("读取配置…");
+  const r = await fetch("/api/config");
+  const data = await r.json();
+  if (!data.ok) { setStatus(data.error || "读取失败", "err"); return; }
+  cfg = data.config;
+  window.sourceTypes = Object.entries(data.source_types || {});
+  window.typeDefaults = data.type_defaults || {};
+  renderDomains();
+  renderScalars();
+  renderSecrets(data.secrets);
+  renderGit(data.git);
+  dirty = false;
+  $("#saveBadge").className = "badge ok";
+  $("#saveBadge").textContent = "没有未保存的改动";
+  setStatus("");
+}
+
+async function save() {
+  if (!cfg) return;
+  setStatus("保存中…");
+  const r = await fetch("/api/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-UI-Token": TOKEN },
+    body: JSON.stringify({ config: cfg })
+  });
+  const data = await r.json();
+  if (!data.ok) {
+    setStatus((data.errors || [data.error || "保存失败"]).join("；"), "err");
+    return;
+  }
+  dirty = false;
+  $("#saveBadge").className = "badge ok";
+  $("#saveBadge").textContent = "已保存";
+  renderGit(data.git);
+  setStatus("已写入 config.json", "ok");
+}
+
+async function commit() {
+  if (dirty) { setStatus("先保存再提交", "err"); return; }
+  const msg = prompt("提交信息", "chore: 更新周报配置");
+  if (msg === null) return;
+  setStatus("提交中…");
+  const r = await fetch("/api/git/commit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-UI-Token": TOKEN },
+    body: JSON.stringify({ message: msg, push: true })
+  });
+  const data = await r.json();
+  if (!data.ok) { setStatus(data.error || "提交失败", "err"); return; }
+  setStatus(data.pushed ? "已提交并推送" : "已提交，但没推送成功", data.pushed ? "ok" : "err");
+  const g = await (await fetch("/api/git")).json();
+  renderGit(g.git);
+}
+
+// ---------------- 事件绑定 ----------------
+document.addEventListener("input", (ev) => {
+  const node = ev.target;
+  const action = node.dataset.action;
+  if (action === "extras") return;                 // JSON 文本域在 change 时处理
+  const path = node.dataset.path;
+  if (!path) return;
+  if (path === "smtp.recipients" || path === "smtp.cc" || node.dataset.list === "line") {
+    setPath(path, node.value.split("\n").map(s => s.trim()).filter(Boolean));
+  } else if (node.dataset.list === "comma") {
+    setPath(path, node.value.split(/[,，]/).map(s => s.trim()).filter(Boolean));
+  } else if (node.type === "checkbox") {
+    setPath(path, node.checked);
+  } else if (node.type === "number") {
+    const v = node.value === "" ? "" : Number(node.value);
+    setPath(path, v);
+  } else {
+    setPath(path, node.value);
+  }
+});
+
+document.addEventListener("change", (ev) => {
+  const node = ev.target;
+  if (node.dataset.action === "change-type") {
+    const di = Number(node.dataset.di), si = Number(node.dataset.si);
+    const src = cfg.domains[di].sources[si];
+    src.type = node.value;
+    const defaults = (window.typeDefaults || {})[src.type] || {};
+    Object.entries(defaults).forEach(([k, v]) => {
+      if (src[k] == null) src[k] = JSON.parse(JSON.stringify(v));
+    });
+    markDirty();
+    renderDomains();
+    return;
+  }
+  if (node.dataset.action === "extras") {
+    const di = Number(node.dataset.di), si = Number(node.dataset.si);
+    try {
+      const obj = JSON.parse(node.value || "{}");
+      const src = cfg.domains[di].sources[si];
+      Object.keys(src).forEach(k => { if (!RESERVED.includes(k)) delete src[k]; });
+      Object.assign(src, obj);
+      markDirty();
+      setStatus("高级字段已更新", "ok");
+    } catch (e) {
+      setStatus("高级字段不是合法 JSON：" + e.message, "err");
+    }
+    return;
+  }
+  if (node.dataset.path === "smtp.mode") {
+    const v = node.value;
+    cfg.smtp = cfg.smtp || {};
+    cfg.smtp.ssl = v === "ssl";
+    cfg.smtp.starttls = v === "starttls";
+    markDirty();
+  }
+});
+
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button");
+  if (!btn) return;
+  const tab = btn.dataset.tab;
+  if (tab) {
+    document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + tab));
+    return;
+  }
+  const action = btn.dataset.action;
+  if (!action) return;
+  const di = Number(btn.dataset.di), si = Number(btn.dataset.si);
+
+  if (action === "add-source") {
+    const type = (window.sourceTypes[0] || ["rss"])[0];
+    cfg.domains[di].sources = cfg.domains[di].sources || [];
+    cfg.domains[di].sources.push(Object.assign({ type, name: "新信源" },
+      JSON.parse(JSON.stringify(window.typeDefaults?.[type] || { weight: 10 }))));
+    markDirty(); renderDomains();
+  } else if (action === "del-source") {
+    if (!confirm("删除这个信源？")) return;
+    cfg.domains[di].sources.splice(si, 1);
+    markDirty(); renderDomains();
+  } else if (action === "del-domain") {
+    if (!confirm("删除整个领域及其信源？")) return;
+    cfg.domains.splice(di, 1);
+    markDirty(); renderDomains();
+  } else if (action === "test-source") {
+    btn.disabled = true; btn.textContent = "测试中…";
+    try {
+      const r = await fetch("/api/source/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-UI-Token": TOKEN },
+        body: JSON.stringify({ domain: cfg.domains[di].id, index: si })
+      });
+      const data = await r.json();
+      if (data.ok) {
+        setStatus(`“${cfg.domains[di].sources[si].name}” 返回 ${data.count} 条` +
+          (data.samples?.[0] ? `，例如：${data.samples[0].title}` : ""), "ok");
+      } else {
+        setStatus("测试失败：" + (data.error || "未知错误"), "err");
+      }
+    } finally {
+      btn.disabled = false; btn.textContent = "测试";
+    }
+  }
+});
+
+$("#addDomain").addEventListener("click", () => {
+  cfg.domains = cfg.domains || [];
+  cfg.domains.push({
+    id: "new-domain", name: "新领域", icon: "📌", enabled: true, max_items: 5,
+    keywords: [], sources: []
+  });
+  markDirty(); renderDomains();
+});
+
+$("#btnSave").addEventListener("click", save);
+$("#btnCommit").addEventListener("click", commit);
+
+// ---------------- 运行面板 ----------------
+async function runJob(mode, extra) {
+  if (dirty) { setStatus("先保存再运行", "err"); return; }
+  $("#previewBox").innerHTML = "";
+  $("#jobLog").textContent = "启动中…";
+  const r = await fetch("/api/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-UI-Token": TOKEN },
+    body: JSON.stringify(Object.assign({ mode }, extra || {}))
+  });
+  const data = await r.json();
+  if (!data.ok) { setStatus(data.error || "启动失败", "err"); return; }
+  lastJob = data.job;
+  const names = { test: "信源体检", preview: "生成预览", send: "发送" };
+  $("#jobTitle").textContent = names[mode] || mode;
+  pollJob(data.job);
+}
+
+async function pollJob(id) {
+  const r = await fetch("/api/job?id=" + encodeURIComponent(id));
+  const data = await r.json();
+  const job = data.job || {};
+  $("#jobLog").textContent = job.log || "（等待输出…）";
+  $("#jobLog").scrollTop = $("#jobLog").scrollHeight;
+  $("#jobMeta").textContent = job.status === "running" ? `运行中 ${job.elapsed || 0}s` :
+    (job.code === 0 ? `完成，用时 ${job.elapsed}s` : `结束，退出码 ${job.code}，用时 ${job.elapsed}s`);
+
+  if (job.status === "running") { setTimeout(() => pollJob(id), 1500); return; }
+  if (job.html) {
+    const box = $("#previewBox");
+    box.innerHTML = `<p class="hint">本期预览：<a href="/out/${encodeURIComponent(job.html)}" target="_blank">新窗口打开</a></p>`;
+    const f = el("iframe", "preview");
+    f.src = "/out/" + encodeURIComponent(job.html);
+    box.appendChild(f);
+  }
+  const okDone = job.code === 0;
+  setStatus(okDone ? "运行完成" : "运行结束，详见日志", okDone ? "ok" : "err");
+}
+
+$("#btnTest").addEventListener("click", () => runJob("test"));
+$("#btnPreview").addEventListener("click", () => runJob("preview"));
+$("#btnPreviewNoLlm").addEventListener("click", () => runJob("preview", { use_llm: false }));
+$("#confirmSend").addEventListener("change", (e) => { $("#btnSend").disabled = !e.target.checked; });
+$("#btnSend").addEventListener("click", () => {
+  if (!confirm("确认用当前收件人真实发信？")) return;
+  runJob("send", { confirm: "send" });
+});
+
+load();
+</script>
+</body>
+</html>

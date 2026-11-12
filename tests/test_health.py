@@ -103,7 +103,7 @@ def test_fallback(tmp):
     path = os.path.join(tmp, "fallback.json")
     os.environ["TECH_WEEKLY_STATE"] = path
     st = health.empty_state()
-    health.record_success(st, "Dead Source", make_snapshot(3))
+    health.record_success(st, health.key("ai", "Dead Source"), make_snapshot(3))
     health.save(path, st)
 
     articles, status = app.collect(make_cfg())
@@ -119,7 +119,7 @@ def test_auto_disable(tmp):
     path = os.path.join(tmp, "disable.json")
     os.environ["TECH_WEEKLY_STATE"] = path
     st = health.empty_state()
-    health.record_success(st, "Dead Source", make_snapshot(2))
+    health.record_success(st, health.key("ai", "Dead Source"), make_snapshot(2))
     health.save(path, st)
 
     cfg = make_cfg(disable_after=1)
@@ -128,7 +128,7 @@ def test_auto_disable(tmp):
     check("冷却期内标记 disabled", status[0].get("disabled") is True)
     check("冷却期内仍用快照补位", status[0].get("fallback") is True and len(articles) == 2)
     check("状态文件里写了截止时间",
-          bool(health.disabled_until(health.load(path), "Dead Source")))
+          bool(health.disabled_until(health.load(path), health.key("ai", "Dead Source"))))
 
 
 def main_test():

@@ -936,22 +936,23 @@ def collect(cfg: dict):
         futures = {}
         for domain_id, src in jobs:
             name = src.get("name", src.get("url", "?"))
+            hkey = health.key(domain_id, name)      # 状态按「领域|名字」记，见 health.key()
             fn = FETCHERS.get(src.get("type", "rss"))
             if fn is None:
                 status.append({"domain": domain_id, "source": name, "ok": False,
                                "error": "未知信源类型 %s" % src.get("type")})
                 continue
-            if disable_after and health.is_disabled(state, name, now):
+            if disable_after and health.is_disabled(state, hkey, now):
                 # 冷却期内：不请求，能补就补，补不上就空着
-                snap = health.snapshot(state, name) if use_state else []
+                snap = health.snapshot(state, hkey) if use_state else []
                 got = _articles_from_snapshot(src, domain_id, snap)
                 articles.extend(got)
-                until = health.disabled_until(state, name)[:10]
+                until = health.disabled_until(state, hkey)[:10]
                 status.append({"domain": domain_id, "source": name, "ok": False,
                                "count": len(got), "fallback": bool(got),
                                "disabled": True, "until": until,
                                "error": "连续 %d 期失败，已暂停至 %s"
-                                        % (health.fail_streak(state, name), until)})
+                                        % (health.fail_streak(state, hkey), until)})
                 if got:
                     warn("  ⏸ %-38s 已暂停抓取，用上期快照补 %d 条（%s 后重试）"
                          % (name[:38], len(got), until))
@@ -962,6 +963,7 @@ def collect(cfg: dict):
         for fut in cf.as_completed(futures):
             domain_id, src = futures[fut]
             name = src.get("name", src.get("url", "?"))
+            hkey = health.key(domain_id, name)
             try:
                 got = fut.result()
                 before = len(got)
@@ -971,7 +973,7 @@ def collect(cfg: dict):
                 status.append({"domain": domain_id, "source": name, "ok": True, "count": len(got),
                                "filtered": before - len(got)})
                 if use_state:
-                    health.record_success(state, name, health.snapshot_of(got, snap_limit), now)
+                    health.record_success(state, hkey, health.snapshot_of(got, snap_limit), now)
                 if before != len(got):
                     log("  ✓ %-38s %3d 条（按主题过滤掉 %d 条）"
                         % (name[:38], len(got), before - len(got)))
@@ -979,10 +981,10 @@ def collect(cfg: dict):
                     log("  ✓ %-38s %3d 条" % (name[:38], len(got)))
             except Exception as exc:  # noqa: BLE001
                 err = "%s: %s" % (type(exc).__name__, str(exc)[:160])
-                snap = health.snapshot(state, name) if use_state else []
+                snap = health.snapshot(state, hkey) if use_state else []
                 got = _articles_from_snapshot(src, domain_id, snap)
                 if disable_after:
-                    health.record_failure(state, name, err, disable_after, cooldown_days, now)
+                    health.record_failure(state, hkey, err, disable_after, cooldown_days, now)
                 articles.extend(got)
                 status.append({"domain": domain_id, "source": name, "ok": False,
                                "count": len(got), "fallback": bool(got), "error": err})
@@ -1783,10 +1785,15 @@ def cmd_llm_test(cfg: dict) -> int:
     return 0 if ok == len(samples) else 1
 
 
+def _state_label(key: str) -> str:
+    """状态键是「领域|名字」，打印时只显示名字。"""
+    return key.split("|", 1)[-1]
+
+
 def cmd_reset(cfg: dict, source: str = "", all_sources: bool = False) -> int:
     """清掉信源的失败计数与暂停标记，让它下一期重新尝试。
 
-    典型的用法：某个源被连续失败暂停了，但你确认它已经修好——
+    典型用法：某个源被连续失败暂停了，但你确认它已经修好——
     不想干等冷却期结束，就跑一次这个命令。快照会保留。
     """
     path = os.environ.get("TECH_WEEKLY_STATE") or health.default_path(HERE)
@@ -1804,7 +1811,7 @@ def cmd_reset(cfg: dict, source: str = "", all_sources: bool = False) -> int:
                 targets.append(name)
         if not targets:
             print("没有匹配 %r 的信源。现有记录：%s"
-                  % (source, "、".join(sorted(state["sources"]))[:400]))
+                  % (source, "、".join(sorted(_state_label(n) for n in state["sources"]))[:400]))
             return 1
     else:
         print("用法：python main.py reset --source \"Bing 新闻\"   或   --all")
@@ -1816,7 +1823,7 @@ def cmd_reset(cfg: dict, source: str = "", all_sources: bool = False) -> int:
         rec["disabled_until"] = ""
         rec["last_error"] = ""
     health.save(path, state)
-    print("已重置 %d 个信源：%s" % (len(targets), "、".join(targets)))
+    print("已重置 %d 个信源：%s" % (len(targets), "、".join(_state_label(n) for n in targets)))
     return 0
 
 
