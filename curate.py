@@ -55,6 +55,7 @@ SCORE_SYSTEM = (
 
 SCORE_USER = (
     "所属领域：%s\n"
+    "%s"
     "候选条目共 %d 条，请逐条打分：\n%s"
 )
 
@@ -173,6 +174,11 @@ class Curator:
             if not arts:
                 continue
             name = dom.get("name", dom_id)
+            # 领域可以给一条评分侧重。默认的标准是"影响力优先"，
+            # 但政策类内容（尤其是地方试点）按这个标准会被系统性压低，
+            # 所以允许每个领域自己说明该看重什么。
+            hint = str(dom.get("curation_hint") or "").strip()
+            hint_text = ("本领域评分侧重（优先于通用标准）：%s\n" % hint) if hint else ""
             size = max(1, self.cur["batch_size"])
             for start in range(0, len(arts), size):
                 batch = arts[start:start + size]
@@ -186,7 +192,7 @@ class Curator:
                     "summary": (a.summary or "")[:200],
                     "source": a.source or "",
                 } for i, a in enumerate(batch)]
-                user = SCORE_USER % (name, len(items),
+                user = SCORE_USER % (name, hint_text, len(items),
                                      json.dumps(items, ensure_ascii=False, indent=1))
                 try:
                     content, usage = translate.post_chat(

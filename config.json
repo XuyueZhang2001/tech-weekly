@@ -4,10 +4,11 @@
     "title": "科技周报",
     "window_days": 7,
     "max_per_domain": 6,
-    "max_total": 24,
+    "max_total": 33,
     "language": "zh",
     "intro": "本期由自动化脚本按公开信源抓取生成，按领域分组、按热度与来源权重排序。",
-    "footer": "本邮件由 tech-weekly 自动生成 · 如需退订请直接删除 GitHub 仓库里的定时任务"
+    "footer": "本邮件由 tech-weekly 自动生成 · 如需退订请直接删除 GitHub 仓库里的定时任务",
+    "_note": "max_total 目前只做展示；实际条数 = 各领域 max_items 之和（33）"
   },
   "smtp": {
     "host": "smtp.163.com",
@@ -38,7 +39,7 @@
     "_comment": "选稿：让大模型判断「值不值得看」。enabled=false 则只用规则打分。threshold 是 0-10 的相关度阈值；pool_per_domain 是每领域送审条数；budget_cny 是本环节花费上限，超了自动退回规则分。",
     "enabled": true,
     "score_threshold": 6.0,
-    "pool_per_domain": 12,
+    "pool_per_domain": 10,
     "min_keep_per_domain": 4,
     "topic_dedup": true,
     "batch_size": 20,
@@ -277,14 +278,15 @@
             "rlhf"
           ]
         }
-      ]
+      ],
+      "curation_hint": "这是 AI / 大模型领域。新模型、新能力、开源权重、重要论文与评测结果都算高价值；纯融资、纯人事新闻让给「公司动态」栏，这里可以少给分。"
     },
     {
       "id": "robot",
       "name": "机器人 / 具身智能",
       "icon": "🦾",
       "enabled": true,
-      "max_items": 5,
+      "max_items": 4,
       "keywords": [
         "robot",
         "机器人",
@@ -439,7 +441,7 @@
       "name": "生物科技 / 医疗",
       "icon": "🧬",
       "enabled": true,
-      "max_items": 5,
+      "max_items": 4,
       "keywords": [
         "biotech",
         "生物",
@@ -967,7 +969,7 @@
       "name": "中国科技动态",
       "icon": "🇨🇳",
       "enabled": true,
-      "max_items": 6,
+      "max_items": 4,
       "keywords": [
         "华为",
         "小米",
@@ -1396,6 +1398,295 @@
           "_note": "Bing Web Search API 已于 2025-08-11 退役。改填 Brave/Tavily/SearXNG 的 Key 后把 enabled 改为 true"
         }
       ]
+    },
+    {
+      "id": "company",
+      "name": "公司动态 / 官方发布",
+      "icon": "🏢",
+      "enabled": true,
+      "max_items": 5,
+      "keywords": [
+        "发布",
+        "推出",
+        "上线",
+        "开源",
+        "新品",
+        "合并",
+        "收购",
+        "裁员",
+        "重组",
+        "离职",
+        "任命",
+        "launch",
+        "release",
+        "unveil",
+        "merger",
+        "acquire",
+        "layoff",
+        "restructuring",
+        "reorg",
+        "appoint"
+      ],
+      "sources": [
+        {
+          "type": "rss",
+          "name": "OpenAI 官方新闻",
+          "url": "https://openai.com/news/rss.xml",
+          "weight": 16
+        },
+        {
+          "type": "rss",
+          "name": "NVIDIA 新闻室",
+          "url": "https://nvidianews.nvidia.com/rss.xml",
+          "weight": 15
+        },
+        {
+          "type": "rss",
+          "name": "Google AI 博客",
+          "url": "https://blog.google/technology/ai/rss/",
+          "weight": 13
+        },
+        {
+          "type": "rss",
+          "name": "DeepMind 博客",
+          "url": "https://deepmind.google/blog/rss.xml",
+          "weight": 13
+        },
+        {
+          "type": "rss",
+          "name": "Meta 新闻室",
+          "url": "https://about.fb.com/feed/",
+          "weight": 11
+        },
+        {
+          "type": "rss",
+          "name": "Apple Newsroom",
+          "url": "https://www.apple.com/newsroom/rss-feed.rss",
+          "weight": 11
+        },
+        {
+          "type": "rss",
+          "name": "Microsoft 博客",
+          "url": "https://blogs.microsoft.com/feed/",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "AWS 新闻",
+          "url": "https://aws.amazon.com/blogs/aws/feed/",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "Samsung 全球新闻",
+          "url": "https://news.samsung.com/global/feed",
+          "weight": 9
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 公司发布",
+          "weight": 14,
+          "queries": [
+            "英伟达 发布",
+            "DeepSeek 发布",
+            "OpenAI 发布",
+            "NVIDIA new product",
+            "Tesla SpaceX merger",
+            "xAI Grok 裁员",
+            "AI division reorganization"
+          ],
+          "title_keywords": [
+            "发布",
+            "推出",
+            "上线",
+            "开源",
+            "合并",
+            "收购",
+            "裁员",
+            "重组",
+            "离职",
+            "任命",
+            "launch",
+            "unveil",
+            "release",
+            "merger",
+            "acquire",
+            "layoff",
+            "reorg",
+            "appoint",
+            "resign"
+          ],
+          "min_title_hits": 1
+        }
+      ],
+      "curation_hint": "这是公司动态领域。官方新闻稿、产品/模型发布、组织架构调整（合并、收购、裁员、重组、高管变动）都算高价值；即使不是头部公司，只要对行业格局有指向性也要给高分。"
+    },
+    {
+      "id": "policy",
+      "name": "政策与监管（中美）",
+      "icon": "🏛️",
+      "enabled": true,
+      "max_items": 5,
+      "keywords": [
+        "政策",
+        "规划",
+        "监管",
+        "法案",
+        "条例",
+        "部委",
+        "国务院",
+        "白宫",
+        "国会",
+        "出口管制",
+        "补贴",
+        "标准",
+        "ai act",
+        "regulation",
+        "policy",
+        "bill",
+        "executive order",
+        "export control",
+        "sanction",
+        "tariff"
+      ],
+      "sources": [
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 中国科技政策",
+          "weight": 15,
+          "queries": [
+            "site:gov.cn 人工智能 政策",
+            "科技部 政策",
+            "工信部 人工智能",
+            "发改委 未来产业",
+            "国务院 常务会议 科技"
+          ],
+          "title_keywords": [
+            "政策",
+            "规划",
+            "方案",
+            "意见",
+            "通知",
+            "人工智能",
+            "芯片",
+            "未来产业",
+            "科技",
+            "创新"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "White House · 总统行动",
+          "weight": 12,
+          "url": "https://www.whitehouse.gov/presidential-actions/feed/",
+          "title_keywords": [
+            "artificial intelligence",
+            "semiconductor",
+            "chip",
+            "technology",
+            "export",
+            "cyber",
+            "quantum",
+            "ai"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "Federal Register · 规则",
+          "weight": 13,
+          "url": "https://www.federalregister.gov/api/v1/documents.rss?conditions%5Btype%5D%5B%5D=RULE&per_page=40",
+          "title_keywords": [
+            "artificial intelligence",
+            "semiconductor",
+            "chip",
+            "export",
+            "cyber",
+            "quantum",
+            "data",
+            "technology"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "CSIS",
+          "weight": 10,
+          "url": "https://www.csis.org/rss.xml",
+          "title_keywords": [
+            "ai",
+            "technology",
+            "chip",
+            "semiconductor",
+            "china",
+            "export"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "ITIF",
+          "weight": 9,
+          "url": "https://itif.org/feed/",
+          "title_keywords": [
+            "ai",
+            "artificial intelligence",
+            "semiconductor",
+            "chip",
+            "innovation",
+            "china",
+            "technology"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "Politico · 科技",
+          "weight": 11,
+          "url": "https://rss.politico.com/technology.xml",
+          "title_keywords": [
+            "congress",
+            "senate",
+            "house",
+            "bill",
+            "law",
+            "regulation",
+            "policy",
+            "white house",
+            "ftc",
+            "fcc",
+            "doj",
+            "antitrust",
+            "export",
+            "tariff",
+            "chip",
+            "ai act",
+            "court",
+            "sue",
+            "lawsuit"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "Axios",
+          "weight": 8,
+          "url": "https://api.axios.com/feed/",
+          "title_keywords": [
+            "ai",
+            "tech",
+            "chip",
+            "policy",
+            "regulation",
+            "white house",
+            "congress",
+            "semiconductor"
+          ],
+          "min_title_hits": 1
+        }
+      ],
+      "curation_hint": "这是政策与监管领域。部委/国务院/白宫/国会/监管机构的一手文件、通知、法案、执法和司法行动都算高价值；地方性政策试点也有指向意义，不要因为范围是地方就压低分数；纯评论、纯观点文章才该低分。"
     }
   ]
 }

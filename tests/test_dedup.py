@@ -107,11 +107,53 @@ def test_json_parsing():
     check("坏输入返回 None", curate._load_json("完全不是 JSON") is None)
 
 
+def test_domain_hint():
+    print("[5] 领域评分侧重（curation_hint）")
+    import datetime as _dt
+
+    captured = {}
+
+    def fake_post(llm, system, user, max_tokens=None, temperature=None):
+        captured["user"] = user
+        return '{"items":[{"i":0,"score":8,"reason":"部委文件"}]}', \
+               {"prompt_tokens": 10, "completion_tokens": 5}
+
+    original = curate.translate.post_chat
+    curate.translate.post_chat = fake_post
+    try:
+        dom = {"id": "policy", "name": "政策与监管", "enabled": True,
+               "curation_hint": "地方试点也算高价值"}
+        cfg = {"curation": {"enabled": True, "score_threshold": 6.0},
+               "llm": {"enabled": True, "api_key": "k", "model": "m",
+                       "price_in_per_m": 0, "price_out_per_m": 0},
+               "domains": [dom]}
+        art = app.Article(title="工信部发布两项 AI 行业标准", url="https://x/1",
+                          source="Bing 新闻", domain="policy",
+                          published=_dt.datetime.now(_dt.timezone.utc), summary="")
+        curator = curate.Curator(cfg, curate.translate.llm_config(cfg))
+        curator.score([art])
+        check("提示词带上了领域侧重", "地方试点也算高价值" in captured.get("user", ""))
+        check("提示词仍含领域名", "政策与监管" in captured.get("user", ""))
+        check("打分结果写回条目", getattr(art, "relevance", None) == 8.0)
+
+        # 没配 hint 的领域不应出现"评分侧重"字样
+        captured.clear()
+        cfg2 = {"curation": {"enabled": True}, "domains": [
+            {"id": "ai", "name": "AI", "enabled": True}]}
+        art2 = app.Article(title="新模型", url="https://x/2", source="s", domain="ai",
+                           published=_dt.datetime.now(_dt.timezone.utc), summary="")
+        curate.Curator(cfg2, curate.translate.llm_config(cfg2)).score([art2])
+        check("未配置时不加侧重段", "评分侧重" not in captured.get("user", ""))
+    finally:
+        curate.translate.post_chat = original
+
+
 def main_test():
     test_similarity()
     test_collapse_merges_links()
     test_curation_config()
     test_json_parsing()
+    test_domain_hint()
     passed = sum(1 for _, ok in RESULTS if ok)
     total = len(RESULTS)
     print("\n%d/%d 通过" % (passed, total))
