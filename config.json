@@ -1517,6 +1517,40 @@
             "resign"
           ],
           "min_title_hits": 1
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 中国企业发布",
+          "weight": 15,
+          "queries": [
+            "site:huawei.com 发布",
+            "华为 发布 芯片 鸿蒙",
+            "DeepSeek 官方 发布",
+            "DeepSeek 发布 模型",
+            "Kimi 月之暗面 发布",
+            "字节 豆包 发布",
+            "阿里 通义 发布",
+            "腾讯 混元 发布",
+            "智谱 发布",
+            "商汤 发布"
+          ],
+          "title_keywords": [
+            "发布",
+            "推出",
+            "上线",
+            "开源",
+            "新品",
+            "模型",
+            "芯片",
+            "鸿蒙",
+            "合并",
+            "收购",
+            "裁员",
+            "重组",
+            "任命",
+            "离职"
+          ],
+          "min_title_hits": 1
         }
       ],
       "curation_hint": "这是公司动态领域。官方新闻稿、产品/模型发布、组织架构调整（合并、收购、裁员、重组、高管变动）都算高价值；即使不是头部公司，只要对行业格局有指向性也要给高分。"
@@ -1682,6 +1716,31 @@
             "white house",
             "congress",
             "semiconductor"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 科技日报 / 部委",
+          "weight": 13,
+          "queries": [
+            "site:stdaily.com 人工智能",
+            "科技日报 人工智能 政策",
+            "科技日报 芯片 政策",
+            "中国 科技部 政策 人工智能",
+            "site:caict.ac.cn 人工智能"
+          ],
+          "title_keywords": [
+            "人工智能",
+            "芯片",
+            "半导体",
+            "算力",
+            "政策",
+            "规划",
+            "标准",
+            "科技",
+            "创新",
+            "未来产业"
           ],
           "min_title_hits": 1
         }

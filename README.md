@@ -38,16 +38,23 @@
 | 🧬 生物科技 / 医疗 | 4 | STAT News、Nature Biotech、PubMed（含**脑机接口**子栏） |
 | 🔌 芯片 / 半导体 | 5 | EE Times、IEEE Spectrum、Tom's Hardware |
 | 🇨🇳 中国科技动态 | 4 | 36氪、IT之家、cnBeta、量子位、机器之心、SCMP |
-| 🏢 公司动态 / 官方发布 | 5 | **各公司官方 newsroom**（OpenAI、NVIDIA、Google、DeepMind、Meta、Apple、微软、AWS、三星）+ Bing 新闻 |
-| 🏛️ 政策与监管（中美） | 5 | **Bing 新闻 site:gov.cn**（科技部/工信部/发改委/国务院）、白宫总统行动、Federal Register、CSIS、ITIF、Politico |
+| 🏢 公司动态 / 官方发布 | 5 | **各公司官方 newsroom**（OpenAI、NVIDIA、Google、DeepMind、Meta、Apple、微软、AWS、三星）+ **中国企业**（华为、DeepSeek、Kimi、字节、阿里、腾讯、智谱、商汤，经 Bing 站内查询） |
+| 🏛️ 政策与监管（中美） | 5 | **Bing 新闻 site:gov.cn**（科技部/工信部/发改委/国务院）、**科技日报 / 中国科技网**、信通院、白宫总统行动、Federal Register、CSIS、ITIF、Politico |
 
 两个新增栏目是刻意做成"一手来源优先"的：
 
 - **公司动态**：直接订阅各家官方新闻室，而不是等媒体转述。产品发布、组织调整（合并/裁员/重组/高管变动）
-  这类消息，官方渠道通常比媒体快半步且不会失真。官方没有 RSS 的公司（如 Anthropic、Tesla、xAI）
-  用 Bing 新闻的关键词查询补位。
-- **政策与监管**：部委和省市的 `gov.cn` 站点大多没有 RSS，所以用 Bing 的
-  `site:gov.cn` 查询抓一手政策；美国侧用白宫总统行动、Federal Register（联邦规则公告）和智库。
+  这类消息，官方渠道通常比媒体快半步且不会失真。
+- **政策与监管**：部委和省市的 `gov.cn` 站点大多没有 RSS，所以用 Bing 的 `site:gov.cn` 查询抓一手政策；
+  美国侧用白宫总统行动、Federal Register（联邦规则公告）和智库。
+
+**中国企业为什么走 Bing 而不是 RSS**：实测华为、DeepSeek、Kimi（月之暗面）、智谱、通义等
+官网都没有可用 RSS（HTML 页面或 503），第三方公众号桥接 wechat2rss 的 395 个号里也没有这些官方号
+（以安全圈和科技媒体为主）。所以用 `site:huawei.com 发布`、`DeepSeek 官方 发布`、
+`Kimi 月之暗面 发布` 这类站内查询来接近官方口径，效果比等媒体转述好。
+
+**科技日报**同理：`stdaily.com` 没有 RSS，改用 `site:stdaily.com 人工智能` 和
+`科技日报 人工智能 政策` 查询。实测能拿到省市"人工智能+"行动方案、部委政策解读这类宣传口内容。
 
 每个领域还可以写一条 `curation_hint`，告诉大模型这一栏该看重什么。政策栏就是靠它
 把"地方试点也算高价值"讲清楚，否则模型会按影响力把地方政策压到阈值以下。
@@ -74,7 +81,7 @@
 ```
 每周一 09:00（北京时间）
         ↓
-抓取 80 个信源  →  去重  →  大模型打分筛选  →  改写成中文  →  渲染 HTML  →  发邮件
+抓取 82 个信源  →  去重  →  大模型打分筛选  →  改写成中文  →  渲染 HTML  →  发邮件
         ↓
 任何一步出问题都降级，不让整封周报发不出去
 ```
