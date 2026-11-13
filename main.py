@@ -43,6 +43,9 @@ import translate
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG = os.path.join(HERE, "config.json")
 ATOM = "{http://www.w3.org/2005/Atom}"
+# 打分用的时间衰减半程（天）。与 report.window_days 保持一致或略大。
+RECENCY_DAYS = 14.0
+
 PAPER_EXCLUDE = re.compile(
     r"\b(survey|review|overview|position paper|tutorial|benchmark(?:ing)? study)\b", re.I
 )
@@ -60,7 +63,10 @@ BING_LOCK = threading.Lock()
 # 避免同一笔融资被多家媒体反复顶上首页。
 FINANCE_RE = re.compile(
     r"融资|募资|估值|股价|涨停|跌停|市值|IPO|上市|A轮|B轮|C轮|战略投资|"
-    r"亿元|亿美元|营收|净利|财报|板块",
+    r"亿元|亿美元|营收|净利|财报|板块|"
+    # 荐股 / 行情类噪音：这些稿子常带"发布""新品"字样，会挤掉真正的产品新闻
+    r"A股|港股|美股|ETF|基金|券商|证券|概念股|龙头股|盘中|收盘|开盘|回购|增持|减持|"
+    r"利好|利空|涨停板|创投|VC|风投",
     re.I,
 )
 
@@ -1008,7 +1014,9 @@ def collect(cfg: dict):
 # --------------------------------------------------------------------------- #
 def score_article(art: Article, dom_cfg: dict, now: datetime) -> float:
     age_hours = max(0.0, (now - art.published).total_seconds() / 3600.0)
-    recency = max(0.0, 1.0 - age_hours / (24.0 * 10))          # 10 天线性衰减
+    # 衰减半程。必须 >= 报告窗口，否则窗口边缘的条目（第 8-10 天）会被压到
+    # 0.5 倍以下，永远挤不进按分数排序的候选池——那"10 天窗口"就名存实亡。
+    recency = max(0.0, 1.0 - age_hours / (24.0 * RECENCY_DAYS))
     score = float(art.weight) * (0.45 + 0.55 * recency)
     haystack = (art.title + " " + art.summary).lower()
     hits = 0
@@ -1062,6 +1070,13 @@ def build_report(cfg: dict, window_days: int, now: datetime | None = None,
             if t:
                 best_by_title[t] = art
     deduped = list({id(a): a for a in best.values()}.values())
+
+    # ---- 先按标题近似去重，再送选稿 ----
+    # 同一件事被多家转载时，会连续占据按分数排序的候选池前排。
+    # 实测公司栏的前 10 名里，腾讯混元的一篇稿子占了 4 席、百度占了 3 席，
+    # 把 DeepSeek / Kimi 挤到了 14 名开外——它们明明在窗口内、分数也不低。
+    # 这里先合并没有坏处：被合并的来源会挂成"相关"链接，不会丢信息。
+    deduped = collapse_similar(deduped)
 
     # ---- 选稿：让大模型做编辑判断，失败自动退回规则分 ----
     # 规则分只能回答"新不新、来源靠不靠谱"，回答不了"值不值得看"。

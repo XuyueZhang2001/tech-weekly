@@ -2,7 +2,7 @@
   "_comment": "科技周报配置。改完这个文件即可换领域、换信源、换收件人。secrets 字段留空则从环境变量读取（GitHub Actions 用 Secrets，本地用 .env 或系统环境变量）。",
   "report": {
     "title": "科技周报",
-    "window_days": 7,
+    "window_days": 10,
     "max_per_domain": 6,
     "max_total": 33,
     "language": "zh",
@@ -39,7 +39,7 @@
     "_comment": "选稿：让大模型判断「值不值得看」。enabled=false 则只用规则打分。threshold 是 0-10 的相关度阈值；pool_per_domain 是每领域送审条数；budget_cny 是本环节花费上限，超了自动退回规则分。",
     "enabled": true,
     "score_threshold": 6.0,
-    "pool_per_domain": 10,
+    "pool_per_domain": 14,
     "min_keep_per_domain": 4,
     "topic_dedup": true,
     "batch_size": 20,
@@ -433,8 +433,30 @@
             "figure ai",
             "boston dynamics"
           ]
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 国内具身公司",
+          "weight": 17,
+          "queries": [
+            "宇树 发布 机器人",
+            "智元机器人 发布",
+            "优必选 发布",
+            "星动纪元 发布",
+            "傅利叶 机器人 发布"
+          ],
+          "title_keywords": [
+            "机器人",
+            "人形",
+            "具身",
+            "机械臂",
+            "四足",
+            "灵巧手"
+          ],
+          "min_title_hits": 1
         }
-      ]
+      ],
+      "curation_hint": "这是机器人/具身智能领域。国产机器人公司的产品发布、量产落地、订单与融资也值得看；不要只偏好论文，产业侧的动作同样重要。"
     },
     {
       "id": "bio",
@@ -653,14 +675,14 @@
         {
           "type": "rss",
           "name": "Nature · 脑机接口",
-          "weight": 13,
+          "weight": 15,
           "url": "https://www.nature.com/subjects/brain-machine-interface.rss",
           "group": "脑机接口"
         },
         {
           "type": "pubmed",
           "name": "PubMed · 脑机接口",
-          "weight": 14,
+          "weight": 15,
           "days": 30,
           "retmax": 12,
           "queries": [
@@ -732,13 +754,17 @@
         {
           "type": "bing_news",
           "name": "Bing 新闻 · 脑机接口",
-          "weight": 11,
+          "weight": 15,
           "group": "脑机接口",
           "queries": [
             "脑机接口",
             "脑机接口 临床",
             "脑机接口 融资",
-            "植入式 脑机接口"
+            "植入式 脑机接口",
+            "脑虎科技 脑机接口",
+            "博睿康 脑机接口",
+            "强脑科技 BrainCo",
+            "阶梯医疗 脑机接口"
           ],
           "title_keywords": [
             "脑机接口",
@@ -770,7 +796,8 @@
       ],
       "group_min": {
         "脑机接口": 2
-      }
+      },
+      "curation_hint": "这是生物科技/医疗领域，含脑机接口子栏。国产脑机公司的临床试验进展、注册审批、产品发布都算高价值；学术论文与产业进展并重。"
     },
     {
       "id": "chip",
@@ -1524,15 +1551,17 @@
           "weight": 15,
           "queries": [
             "site:huawei.com 发布",
-            "华为 发布 芯片 鸿蒙",
-            "DeepSeek 官方 发布",
-            "DeepSeek 发布 模型",
+            "华为 昇腾 发布",
+            "DeepSeek 发布",
             "Kimi 月之暗面 发布",
-            "字节 豆包 发布",
-            "阿里 通义 发布",
-            "腾讯 混元 发布",
             "智谱 发布",
-            "商汤 发布"
+            "MiniMax 发布",
+            "阶跃星辰 发布",
+            "商汤 发布",
+            "字节 豆包 发布",
+            "阿里 千问 发布",
+            "腾讯 混元 发布",
+            "百度 文心 发布"
           ],
           "title_keywords": [
             "发布",
@@ -1551,6 +1580,30 @@
             "离职"
           ],
           "min_title_hits": 1
+        },
+        {
+          "type": "rss",
+          "name": "字节跳动技术团队（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/4025ea55575daf8bfd8227e68b28d9638b073267.xml",
+          "weight": 11
+        },
+        {
+          "type": "rss",
+          "name": "腾讯技术工程（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/9685937b45fe9c7a526dbc32e4f24ba879a65b9a.xml",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "阿里云开发者（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/c74ed6db00cfbf16f2a048a165b4453f982681f0.xml",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "小米技术（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/20bc9c3251b3c4f73d3b53aa1f1ab853d05d4cbc.xml",
+          "weight": 9
         }
       ],
       "curation_hint": "这是公司动态领域。官方新闻稿、产品/模型发布、组织架构调整（合并、收购、裁员、重组、高管变动）都算高价值；即使不是头部公司，只要对行业格局有指向性也要给高分。"
