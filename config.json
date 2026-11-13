@@ -4,7 +4,7 @@
     "title": "科技周报",
     "window_days": 10,
     "max_per_domain": 6,
-    "max_total": 33,
+    "max_total": 60,
     "language": "zh",
     "intro": "本期由自动化脚本按公开信源抓取生成，按领域分组、按热度与来源权重排序。",
     "footer": "本邮件由 tech-weekly 自动生成 · 如需退订请直接删除 GitHub 仓库里的定时任务",
@@ -38,12 +38,12 @@
   "curation": {
     "_comment": "选稿：让大模型判断「值不值得看」。enabled=false 则只用规则打分。threshold 是 0-10 的相关度阈值；pool_per_domain 是每领域送审条数；budget_cny 是本环节花费上限，超了自动退回规则分。",
     "enabled": true,
-    "score_threshold": 6.0,
-    "pool_per_domain": 14,
+    "score_threshold": 5.5,
+    "pool_per_domain": 20,
     "min_keep_per_domain": 4,
     "topic_dedup": true,
     "batch_size": 20,
-    "max_dedup_items": 40,
+    "max_dedup_items": 60,
     "budget_cny": 0.1
   },
   "llm": {
@@ -70,7 +70,7 @@
       "name": "AI / 大模型",
       "icon": "🤖",
       "enabled": true,
-      "max_items": 6,
+      "max_items": 10,
       "keywords": [
         "llm",
         "gpt",
@@ -277,6 +277,140 @@
             "reinforcement learning",
             "rlhf"
           ]
+        },
+        {
+          "type": "rss",
+          "name": "OpenAI 官方新闻",
+          "url": "https://openai.com/news/rss.xml",
+          "weight": 16
+        },
+        {
+          "type": "rss",
+          "name": "Google AI 博客",
+          "url": "https://blog.google/technology/ai/rss/",
+          "weight": 13
+        },
+        {
+          "type": "rss",
+          "name": "DeepMind 博客",
+          "url": "https://deepmind.google/blog/rss.xml",
+          "weight": 13
+        },
+        {
+          "type": "rss",
+          "name": "Meta 新闻室",
+          "url": "https://about.fb.com/feed/",
+          "weight": 11
+        },
+        {
+          "type": "rss",
+          "name": "Apple Newsroom",
+          "url": "https://www.apple.com/newsroom/rss-feed.rss",
+          "weight": 11
+        },
+        {
+          "type": "rss",
+          "name": "Microsoft 博客",
+          "url": "https://blogs.microsoft.com/feed/",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "AWS 新闻",
+          "url": "https://aws.amazon.com/blogs/aws/feed/",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "字节跳动技术团队（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/4025ea55575daf8bfd8227e68b28d9638b073267.xml",
+          "weight": 11
+        },
+        {
+          "type": "rss",
+          "name": "腾讯技术工程（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/9685937b45fe9c7a526dbc32e4f24ba879a65b9a.xml",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "阿里云开发者（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/c74ed6db00cfbf16f2a048a165b4453f982681f0.xml",
+          "weight": 10
+        },
+        {
+          "type": "rss",
+          "name": "小米技术（公众号）",
+          "url": "https://wechat2rss.xlab.app/feed/20bc9c3251b3c4f73d3b53aa1f1ab853d05d4cbc.xml",
+          "weight": 9
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · AI 公司动态",
+          "weight": 15,
+          "queries": [
+            "DeepSeek 发布",
+            "OpenAI 发布",
+            "xAI Grok 裁员",
+            "AI division reorganization",
+            "Kimi 月之暗面 发布",
+            "智谱 发布",
+            "MiniMax 发布",
+            "阶跃星辰 发布",
+            "商汤 发布",
+            "字节 豆包 发布",
+            "阿里 千问 发布",
+            "腾讯 混元 发布",
+            "百度 文心 发布"
+          ],
+          "title_keywords": [
+            "发布",
+            "推出",
+            "上线",
+            "开源",
+            "模型",
+            "合并",
+            "收购",
+            "裁员",
+            "重组",
+            "任命"
+          ],
+          "min_title_hits": 1
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 中国企业发布",
+          "weight": 15,
+          "queries": [
+            "site:huawei.com 发布",
+            "DeepSeek 发布",
+            "Kimi 月之暗面 发布",
+            "智谱 发布",
+            "MiniMax 发布",
+            "阶跃星辰 发布",
+            "商汤 发布",
+            "字节 豆包 发布",
+            "阿里 千问 发布",
+            "腾讯 混元 发布",
+            "百度 文心 发布"
+          ],
+          "title_keywords": [
+            "发布",
+            "推出",
+            "上线",
+            "开源",
+            "新品",
+            "模型",
+            "芯片",
+            "鸿蒙",
+            "合并",
+            "收购",
+            "裁员",
+            "重组",
+            "任命",
+            "离职"
+          ],
+          "min_title_hits": 1
         }
       ],
       "curation_hint": "这是 AI / 大模型领域。新模型、新能力、开源权重、重要论文与评测结果都算高价值；纯融资、纯人事新闻让给「公司动态」栏，这里可以少给分。"
@@ -286,7 +420,7 @@
       "name": "机器人 / 具身智能",
       "icon": "🦾",
       "enabled": true,
-      "max_items": 4,
+      "max_items": 10,
       "keywords": [
         "robot",
         "机器人",
@@ -463,7 +597,7 @@
       "name": "生物科技 / 医疗",
       "icon": "🧬",
       "enabled": true,
-      "max_items": 4,
+      "max_items": 10,
       "keywords": [
         "biotech",
         "生物",
@@ -804,7 +938,7 @@
       "name": "芯片 / 半导体",
       "icon": "🔌",
       "enabled": true,
-      "max_items": 5,
+      "max_items": 10,
       "keywords": [
         "chip",
         "芯片",
@@ -988,6 +1122,40 @@
             "chiplet",
             "asic"
           ]
+        },
+        {
+          "type": "rss",
+          "name": "NVIDIA 新闻室",
+          "url": "https://nvidianews.nvidia.com/rss.xml",
+          "weight": 15
+        },
+        {
+          "type": "rss",
+          "name": "Samsung 全球新闻",
+          "url": "https://news.samsung.com/global/feed",
+          "weight": 9
+        },
+        {
+          "type": "bing_news",
+          "name": "Bing 新闻 · 国产芯片公司",
+          "weight": 15,
+          "queries": [
+            "华为 昇腾 发布",
+            "华为 芯片 发布",
+            "寒武纪 发布",
+            "摩尔线程 发布",
+            "壁仞 发布"
+          ],
+          "title_keywords": [
+            "芯片",
+            "算力",
+            "GPU",
+            "处理器",
+            "晶圆",
+            "封装",
+            "制程"
+          ],
+          "min_title_hits": 1
         }
       ]
     },
@@ -996,7 +1164,7 @@
       "name": "中国科技动态",
       "icon": "🇨🇳",
       "enabled": true,
-      "max_items": 4,
+      "max_items": 10,
       "keywords": [
         "华为",
         "小米",
@@ -1424,196 +1592,15 @@
           "enabled": false,
           "_note": "Bing Web Search API 已于 2025-08-11 退役。改填 Brave/Tavily/SearXNG 的 Key 后把 enabled 改为 true"
         }
-      ]
-    },
-    {
-      "id": "company",
-      "name": "公司动态 / 官方发布",
-      "icon": "🏢",
-      "enabled": true,
-      "max_items": 5,
-      "keywords": [
-        "发布",
-        "推出",
-        "上线",
-        "开源",
-        "新品",
-        "合并",
-        "收购",
-        "裁员",
-        "重组",
-        "离职",
-        "任命",
-        "launch",
-        "release",
-        "unveil",
-        "merger",
-        "acquire",
-        "layoff",
-        "restructuring",
-        "reorg",
-        "appoint"
       ],
-      "sources": [
-        {
-          "type": "rss",
-          "name": "OpenAI 官方新闻",
-          "url": "https://openai.com/news/rss.xml",
-          "weight": 16
-        },
-        {
-          "type": "rss",
-          "name": "NVIDIA 新闻室",
-          "url": "https://nvidianews.nvidia.com/rss.xml",
-          "weight": 15
-        },
-        {
-          "type": "rss",
-          "name": "Google AI 博客",
-          "url": "https://blog.google/technology/ai/rss/",
-          "weight": 13
-        },
-        {
-          "type": "rss",
-          "name": "DeepMind 博客",
-          "url": "https://deepmind.google/blog/rss.xml",
-          "weight": 13
-        },
-        {
-          "type": "rss",
-          "name": "Meta 新闻室",
-          "url": "https://about.fb.com/feed/",
-          "weight": 11
-        },
-        {
-          "type": "rss",
-          "name": "Apple Newsroom",
-          "url": "https://www.apple.com/newsroom/rss-feed.rss",
-          "weight": 11
-        },
-        {
-          "type": "rss",
-          "name": "Microsoft 博客",
-          "url": "https://blogs.microsoft.com/feed/",
-          "weight": 10
-        },
-        {
-          "type": "rss",
-          "name": "AWS 新闻",
-          "url": "https://aws.amazon.com/blogs/aws/feed/",
-          "weight": 10
-        },
-        {
-          "type": "rss",
-          "name": "Samsung 全球新闻",
-          "url": "https://news.samsung.com/global/feed",
-          "weight": 9
-        },
-        {
-          "type": "bing_news",
-          "name": "Bing 新闻 · 公司发布",
-          "weight": 14,
-          "queries": [
-            "英伟达 发布",
-            "DeepSeek 发布",
-            "OpenAI 发布",
-            "NVIDIA new product",
-            "Tesla SpaceX merger",
-            "xAI Grok 裁员",
-            "AI division reorganization"
-          ],
-          "title_keywords": [
-            "发布",
-            "推出",
-            "上线",
-            "开源",
-            "合并",
-            "收购",
-            "裁员",
-            "重组",
-            "离职",
-            "任命",
-            "launch",
-            "unveil",
-            "release",
-            "merger",
-            "acquire",
-            "layoff",
-            "reorg",
-            "appoint",
-            "resign"
-          ],
-          "min_title_hits": 1
-        },
-        {
-          "type": "bing_news",
-          "name": "Bing 新闻 · 中国企业发布",
-          "weight": 15,
-          "queries": [
-            "site:huawei.com 发布",
-            "华为 昇腾 发布",
-            "DeepSeek 发布",
-            "Kimi 月之暗面 发布",
-            "智谱 发布",
-            "MiniMax 发布",
-            "阶跃星辰 发布",
-            "商汤 发布",
-            "字节 豆包 发布",
-            "阿里 千问 发布",
-            "腾讯 混元 发布",
-            "百度 文心 发布"
-          ],
-          "title_keywords": [
-            "发布",
-            "推出",
-            "上线",
-            "开源",
-            "新品",
-            "模型",
-            "芯片",
-            "鸿蒙",
-            "合并",
-            "收购",
-            "裁员",
-            "重组",
-            "任命",
-            "离职"
-          ],
-          "min_title_hits": 1
-        },
-        {
-          "type": "rss",
-          "name": "字节跳动技术团队（公众号）",
-          "url": "https://wechat2rss.xlab.app/feed/4025ea55575daf8bfd8227e68b28d9638b073267.xml",
-          "weight": 11
-        },
-        {
-          "type": "rss",
-          "name": "腾讯技术工程（公众号）",
-          "url": "https://wechat2rss.xlab.app/feed/9685937b45fe9c7a526dbc32e4f24ba879a65b9a.xml",
-          "weight": 10
-        },
-        {
-          "type": "rss",
-          "name": "阿里云开发者（公众号）",
-          "url": "https://wechat2rss.xlab.app/feed/c74ed6db00cfbf16f2a048a165b4453f982681f0.xml",
-          "weight": 10
-        },
-        {
-          "type": "rss",
-          "name": "小米技术（公众号）",
-          "url": "https://wechat2rss.xlab.app/feed/20bc9c3251b3c4f73d3b53aa1f1ab853d05d4cbc.xml",
-          "weight": 9
-        }
-      ],
-      "curation_hint": "这是公司动态领域。官方新闻稿、产品/模型发布、组织架构调整（合并、收购、裁员、重组、高管变动）都算高价值；即使不是头部公司，只要对行业格局有指向性也要给高分。"
+      "curation_hint": "这是中国科技动态。国产大模型、芯片、机器人、脑机公司的产品发布与量产进展优先；娱乐八卦、游戏发行、消费电子促销、传闻类内容要压低分数。"
     },
     {
       "id": "policy",
       "name": "政策与监管（中美）",
       "icon": "🏛️",
       "enabled": true,
-      "max_items": 5,
+      "max_items": 10,
       "keywords": [
         "政策",
         "规划",
@@ -1691,8 +1678,7 @@
             "export",
             "cyber",
             "quantum",
-            "data",
-            "technology"
+            "ai "
           ],
           "min_title_hits": 1
         },

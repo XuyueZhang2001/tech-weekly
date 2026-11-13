@@ -1117,7 +1117,12 @@ def build_report(cfg: dict, window_days: int, now: datetime | None = None,
             continue
         quota = int(dom.get("max_items", cfg.get("report", {}).get("max_per_domain", 6)))
         pool = [a for a in deduped if a.domain == dom["id"] and a.in_window]
-        stale_pool = [a for a in deduped if a.domain == dom["id"] and not a.in_window]
+        # 窗口外的旧条目只用于"本期不够时补位"。补位内容没经过大模型选稿，
+        # 所以这里先挡掉荐股/诉讼这类明显不该进的，避免它们占掉名额。
+        stale_pool = [a for a in deduped
+                      if a.domain == dom["id"] and not a.in_window
+                      and not FINANCE_RE.search(a.title)
+                      and not NOISE_RE.search(a.title)]
         pool.sort(key=lambda a: (a.score, a.published), reverse=True)
         stale_pool.sort(key=lambda a: (a.score, a.published), reverse=True)
 

@@ -70,8 +70,11 @@ DEDUPE_SYSTEM = (
     "是两件事，不要合并。\n"
     "3. 同一主题下的不同进展也不算重复。例如「A 公司开源模型」和「B 公司开源模型」"
     "是两件事。\n"
-    "4. 拿不准的时候保留，不要合并。漏合并的代价小于错合并。\n"
-    "5. 每组第一个编号是保留项（分数最高的那条），其余编号会被丢弃。\n"
+    "4. 同一款产品在同一周内的多条报道算同一事件：预览、上线、发布会、\n"
+    "被不同媒体转述，都应合并到信息最完整的那一条。\n"
+    "5. 但不同产品线不算重复，例如同一公司的 Hy4 与 Hy Realtime 是两个东西。\n"
+    "6. 拿不准的时候保留，不要合并。漏合并的代价小于错合并。\n"
+    "7. 每组第一个编号是保留项（分数最高的那条），其余编号会被丢弃。\n"
     "\n"
     "只输出 JSON，不要输出任何解释文字：\n"
     '{"duplicates":[[0,5,9],[3,7]]}\n'
@@ -325,12 +328,6 @@ class Curator:
             kept = self.dedupe(kept)
         after = len(kept)
 
-        # 未进入候选池的条目直接丢弃；窗口外的旧条目保留给"补位"逻辑
-        kept_ids = {id(a) for a in kept}
-        pool_ids = {id(a) for a in pool}
-        leftover = [a for a in in_window
-                    if id(a) not in kept_ids and id(a) not in pool_ids]
-
         # 融合分数：相关度为主，规则分为辅，后续配额与轮转沿用原有逻辑
         for art in kept:
             if getattr(art, "relevance", None) is not None:
@@ -338,10 +335,10 @@ class Curator:
             elif art.score < 0:
                 art.score = 0.0
 
-        # 没送审的条目（规则分排在候选池之外）只用于名额补位，压一档避免挤掉送审过的
-        for art in leftover:
-            art.score *= 0.5
-
+        # 没送审的条目（规则分排在候选池之外）不再参与补位。
+        # 原因：把每期条数调大之后，选稿只留下约 8-9 条合格的，剩下的名额过去会
+        # 用这些"从未被打分"的条目填满，于是荐股稿、娱乐八卦混进了周报。
+        # 现在的原则是：配额是上限，不是指标——某周不够就少发几条。
         stats = {
             "enabled": True,
             "pool": len(pool),
@@ -359,7 +356,8 @@ class Curator:
                   % (len(pool), after, max(0, before - after), stats["cost_cny"],
                      stats["requests"]))
 
-        return kept + stale + leftover, stats
+        # 只回"过了选稿的" + "窗口外的旧条目（用于真的没内容时补位）"
+        return kept + stale, stats
 
 
 def curate(articles: list, cfg: dict, log_fn=None, warn_fn=None,
