@@ -570,8 +570,14 @@ class Handler(BaseHTTPRequestHandler):
                 ready.append("SMTP_PASSWORD")
             if smtp.get("sender") or smtp.get("user"):
                 ready.append("MAIL_FROM")
+            git = git_status()
             return self._json({"ok": True, "repo": info["repo"], "remote": info["remote"],
-                               "ready": ready})
+                               "ready": ready,
+                               # config.json 改了没提交时提醒：SMTP 服务器/端口这些
+                               # 不是密钥，走 git；只写 Secrets 不会同步过去
+                               "dirty": bool(git.get("dirty")),
+                               "changes": [c for c in git.get("changes", [])
+                                           if "config.json" in c]})
 
         if path.startswith("/out/"):
             name = os.path.basename(path[len("/out/"):])

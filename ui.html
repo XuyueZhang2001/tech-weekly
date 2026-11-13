@@ -295,7 +295,8 @@
         <button id="btnPushSecrets" class="primary">写入 Secrets</button>
         <span id="ghStatus" class="hint"></span>
       </div>
-      <div id="ghReady" class="hint" style="margin-top:10px"></div>
+      <div id="ghDirty" class="hint" style="margin-top:10px"></div>
+      <div id="ghReady" class="hint" style="margin-top:6px"></div>
     </div>
 
     <div class="card">
@@ -841,6 +842,20 @@ async function loadGithub() {
   $("#ghReady").textContent = ready.length
     ? "将写入：" + ready.join("、") + ($("#ghMailTo").value.trim() ? "、MAIL_TO" : "（收件人填了才会写 MAIL_TO）")
     : "本机还没有凭据。先去「收件与投递」和「AI 与选稿」页保存账号和 Key。";
+
+  // SMTP 服务器、端口这些不是密钥，走 config.json；没提交推送就不会生效
+  const dirty = $("#ghDirty");
+  if (d.dirty && (d.changes || []).length) {
+    dirty.className = "warn-text";
+    dirty.textContent = "⚠ config.json 有未提交的改动（" + d.changes.join("、") +
+      "）。服务器地址/端口这类设置走 git，先点底部「提交并推送」，否则线上仍是旧配置。";
+  } else if (d.dirty) {
+    dirty.className = "hint";
+    dirty.textContent = "提示：工作区有其它改动未提交（与本次写 Secrets 无关）。";
+  } else {
+    dirty.className = "hint";
+    dirty.textContent = "";
+  }
 }
 
 $("#btnPushSecrets").addEventListener("click", async () => {
