@@ -16,7 +16,7 @@ on:
       days:
         description: "时间窗口（天）"
         required: false
-        default: "7"
+        default: "10"
 
 concurrency:
   group: weekly-tech-digest
@@ -78,7 +78,7 @@ jobs:
           MODE="${{ github.event.inputs.mode }}"
           DAYS="${{ github.event.inputs.days }}"
           if [ -z "$MODE" ]; then MODE="run"; fi
-          if [ -z "$DAYS" ]; then DAYS="7"; fi
+          if [ -z "$DAYS" ]; then DAYS="10"; fi
           echo "模式=$MODE 窗口=${DAYS}天"
           python main.py "$MODE" --days "$DAYS"
 
